@@ -1,2 +1,2 @@
 # MXREC
-multi-source music recommandation tool 
+A multi-source music recommandation tool 
