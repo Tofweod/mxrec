@@ -1,10 +1,9 @@
-#ifndef TOF_STRING_H
-#define TOF_STRING_H
+#ifndef TOF_MXREC_STRING_H
+#define TOF_MXREC_STRING_H
 
-#include "comm.h"
-
+#include "utf8proc/utf8proc.h"
 // utf-8 string
-typedef u8_t *u8s;
+typedef utf8proc_int32_t *u8s;
 typedef utf8proc_size_t u8s_size_t;
 typedef utf8proc_property_t u8s_property;
 typedef enum {
@@ -43,7 +42,7 @@ static inline u8s_size_t u8slen(const u8s s)
 }
 
 u8s u8snewlen(const void *init, u8s_size_t len);
-u8s u8snew(const void *init);
+u8s u8snew(const char *init);
 u8s u8snewplacement(char *buf, size_t bufsize, const char *init, u8s_size_t len);
 
 u8s u8sempty(void);
@@ -67,4 +66,4 @@ int u8sneedsrepr(const u8s s);
 
 u8s u8s_proc(const u8s src, u8s_size_t srclen, u8s_option_t opts);
 
-#endif // !TOF_STRING_H
+#endif // !TOF_MXREC_STRING_H
