@@ -30,6 +30,7 @@
 
 // utf-8 string
 #include "utf8proc/utf8proc.h"
+#include <stdarg.h>
 
 // wrapper of utf8proc string
 typedef utf8proc_uint8_t *u8s;
@@ -40,6 +41,7 @@ typedef utf8proc_size_t u8s_size_t;
 // copdepoint
 typedef utf8proc_int32_t u8cp;
 
+// byte level idx
 typedef utf8proc_ssize_t u8s_ssize_t;
 
 #define U8S_AVG_CHAR_SIZE 2
@@ -88,6 +90,9 @@ static inline void u8snormtype(u8s_norm_t type)
 u8s_size_t u8slen(const u8s s);
 // byte length
 size_t u8sblen(const u8s s);
+
+// manually truncate u8s with 'len'
+void u8ssetblen(u8s s, size_t len);
 u8s u8snewlen(const void *init, size_t len);
 u8s u8snew(const char *init);
 u8s u8snewplacement(void *buf, size_t bufsize, const u8s init, size_t len, u8s_norm_t type);
@@ -95,7 +100,7 @@ u8s u8snewplacement(void *buf, size_t bufsize, const u8s init, size_t len, u8s_n
 u8s u8sempty(void);
 u8s u8sdup(const u8s s);
 void u8sfree(u8s s);
-u8s u8sexpandzero(u8s s, u8s_size_t len);
+u8s u8sexpandzero(u8s s, size_t len);
 
 /**
  * u8s operated such as cat, cpy will simply use memory operations in stdlib.h
@@ -114,6 +119,14 @@ u8s u8scpylen(u8s s, const void *t, size_t len);
 u8s u8scpy(u8s s, const char *t);
 u8s u8scpyu8s(u8s s, const u8s t);
 
+u8s u8scatvprintf(u8s s, const char *fmt, va_list ap);
+#ifdef __GNUC__
+u8s u8scatprintf(u8s s, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)));
+#else
+u8s u8scatprintf(u8s s, const char *fmt, ...);
+#endif
+
 void u8snormalize(u8s *s, u8s_norm_t type);
 
 // return -1 on error
@@ -123,7 +136,10 @@ u8s u8schr(const u8s s, u8cp c);
 // record length of returned codepoint array
 u8cp *u8s2codepoint(const u8s s, size_t *len);
 void u8strim(u8s s, const u8s cset);
-// TODO
+// TODO paramter type
+void u8ssubstr(u8s s, size_t start, size_t len);
+void u8srange(u8s s,u8s_ssize_t start,u8s_ssize_t end);
+void u8sclear(u8s s);
 
 /**
  * u8scmp
@@ -133,7 +149,7 @@ void u8strim(u8s s, const u8s cset);
 int u8scmp(const u8s s1, const u8s s2);
 u8s u8scatrepr(u8s s, const char *p, u8s_size_t len);
 u8s u8sjoin(char **argv, int argc, char *sep);
-u8s u8sjoinu8s(u8s *argv, int argc, const char *sep, u8s_size_t seplen);
+u8s u8sjoinu8s(u8s *argv, int argc, const char *sep, size_t seplen);
 int u8sneedsrepr(const u8s s);
 
 /**

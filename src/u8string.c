@@ -3,6 +3,8 @@
 #include "comm.h"
 #include "utf8proc/utf8proc.h"
 #include "xmalloc.h"
+#include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 extern u8s_norm_t default_norm_type;
@@ -50,6 +52,12 @@ u8s_size_t u8slen(const u8s s)
 size_t u8sblen(const u8s s)
 {
 	return U8S_HDR(s)->len;
+}
+
+static inline size_t u8savail(const u8s s)
+{
+	struct u8shdr *h = U8S_HDR(s);
+	return h->alloc - h->len;
 }
 
 // static auxiliary functions
@@ -124,7 +132,7 @@ cleanup:
 }
 
 /**
- * cmp between u8s on raw data
+ * cmp between u8s on raw data that have the same normaliziton standard.
  */
 static inline int _u8scmp(const u8s s1, size_t l1, const u8s s2, size_t l2)
 {
@@ -162,7 +170,7 @@ static inline int _u8scmpNorm(const u8s s1, const u8s s2)
 		ret = utf8proc_map(s2, l2, &ns,
 				   (utf8proc_option_t)u8snormtype2option(h1->type));
 		if (ret < 0)
-			goto err;
+			panic("Normalizing u8s failed:%s", s2);
 	}
 
 	cmp = _u8scmp(s1, l2, ns, ret);
@@ -170,24 +178,39 @@ static inline int _u8scmpNorm(const u8s s1, const u8s s2)
 	utf8proc_free(ns);
 
 	return cmp;
-err:
-	panic("Normalizing u8s failed:%s", s2);
 }
 
-// Make room with assigned character length of 'len', record really used bytes in 'used'
-// Return new allocated u8s, the old u8s is deprecated.
-// We simply assume a codepoint's byte length is U8S_AVG_CHAR_SIZE
-static inline u8s _u8sExpand(u8s s, u8s_size_t len, size_t *used)
+static inline u8s _u8sExpand(u8s s, size_t addlen)
 {
-	// TODO
-}
+	void *h, *newh;
+	size_t avail = u8savail(s);
+	size_t len, newlen;
+	int hdrlen = U8S_HDRSIZE;
 
-static inline u8s _u8sExpandblen(u8s s, size_t len)
-{
-	// TODO
+	h = U8S_HDR(s);
+
+	if (avail >= addlen)
+		return s;
+
+	len = u8sblen(s);
+	newlen = (len + addlen);
+	assert(newlen > len);
+
+	newh = xrealloc(h, hdrlen + newlen + 1);
+	if (newh == NULL)
+		return NULL;
+	s = (u8s)newh + hdrlen;
+	u8s_set(s, alloc, newlen);
+	return s;
 }
 
 // exposed api
+void u8ssetblen(u8s s, size_t len)
+{
+	assert(u8sblen(s) >= len);
+	u8s_set(s, len, len);
+}
+
 u8s u8snewlen(const void *init, size_t len)
 {
 	return _u8snewlen(init, len);
@@ -238,26 +261,25 @@ void u8sfree(u8s s)
 	xfree(U8S_HDR(s));
 }
 
-u8s u8sexpandzero(u8s s, u8s_size_t len)
+u8s u8sexpandzero(u8s s, size_t len)
 {
-	size_t used;
 	u8s_size_t curlen = u8slen(s);
 
 	if (len <= curlen)
 		return s;
-	s = _u8sExpand(s, len - curlen, &used);
+	s = _u8sExpand(s, len - curlen);
 	if (s == NULL)
 		return NULL;
 
-	memset(s + curlen, 0, (used - curlen + 1));
-	u8s_set(s, len, used);
+	memset(s + curlen, 0, (len - curlen + 1));
+	u8s_set(s, len, len);
 	return s;
 }
 
 u8s u8scatlen(u8s s, const void *t, size_t len)
 {
 	size_t curlen = u8sblen(s);
-	s = _u8sExpandblen(s, len);
+	s = _u8sExpand(s, len);
 	if (s == NULL)
 		return NULL;
 	memcpy(s + curlen, t, len);
@@ -269,10 +291,9 @@ u8s u8scatlen(u8s s, const void *t, size_t len)
 
 u8s u8scpylen(u8s s, const void *t, size_t len)
 {
-	// TODO
 	size_t alloc = u8s_get(s, alloc);
 	if (alloc < len) {
-		s = _u8sExpandblen(s, len - u8sblen(s));
+		s = _u8sExpand(s, len - u8sblen(s));
 	}
 	memcpy(s, t, len);
 	s[len] = '\0';
@@ -384,9 +405,74 @@ u8s u8scpyu8s(u8s s, const u8s t)
 	return u8scpylen(s, t, u8sblen(t));
 }
 
+u8s u8scatvprintf(u8s s, const char *fmt, va_list ap)
+{
+	va_list cp;
+	char staticbuf[1024], *buf = staticbuf;
+	u8s t;
+	size_t buflen = strlen(fmt) * 2;
+	int bufstrlen;
+
+	if (buflen > sizeof(staticbuf)) {
+		buf = xmalloc(buflen);
+		if (buf == NULL)
+			return NULL;
+	} else {
+		buflen = sizeof(staticbuf);
+	}
+
+	while (1) {
+		va_copy(cp, ap);
+		// do not use 
+		bufstrlen = vsnprintf(buf, buflen, fmt, cp);
+		va_end(cp);
+		if (bufstrlen < 0) {
+			if (buf != staticbuf)
+				xfree(buf);
+			return NULL;
+		}
+		if ((size_t)bufstrlen >= buflen) {
+			if (buf != staticbuf)
+				xfree(buf);
+			buflen = ((size_t)bufstrlen) + 1;
+			buf = xmalloc(buflen);
+			if (buf == NULL)
+				return NULL;
+			continue;
+		}
+		break;
+	}
+
+	t = u8scatlen(s, buf, bufstrlen);
+	if (buf != staticbuf)
+		xfree(buf);
+	return t;
+}
+
+u8s u8scatprintf(u8s s, const char *fmt, ...)
+{
+	va_list ap;
+	u8s t;
+	va_start(ap, fmt);
+	t = u8scatvprintf(s, fmt, ap);
+	va_end(ap);
+	return t;
+}
+
+// TODO
+
+void u8sclear(u8s s)
+{
+	u8ssetblen(s, 0);
+	s[0] = '\0';
+}
+
 int u8scmp(const u8s s1, const u8s s2)
 {
+	int cmp;
 	struct u8shdr *h1, *h2;
+	u8s ns1, ns2;
+	bool n1 = false, n2 = false;
 
 	h1 = U8S_HDR(s1);
 	h2 = U8S_HDR(s2);
@@ -394,7 +480,69 @@ int u8scmp(const u8s s1, const u8s s2)
 	if (h1->valid_type && h2->valid_type) {
 		return _u8scmpNorm(s1, s2);
 	}
-	// TODO
+	if (h1->valid_type == 0) {
+		ns1 = u8s_proc(s1, u8sblen(s1),
+			       u8snormtype2option(default_norm_type));
+		n1 = true;
+		if (ns1 == NULL)
+			goto err;
+	} else {
+		ns1 = s1;
+	}
+	if (h2->valid_type == 0) {
+		ns2 = u8s_proc(s2, u8sblen(s2),
+			       u8snormtype2option(default_norm_type));
+		n2 = true;
+		if (ns1 == NULL)
+			goto err;
+	} else {
+		ns2 = s2;
+	}
+
+	cmp = _u8scmp(ns1, u8sblen(ns1), ns2, u8sblen(ns2));
+
+	if (n1)
+		u8sfree(ns1);
+	if (n2)
+		u8sfree(ns2);
+
+	return cmp;
+
+err:
+	if (n1 && ns1)
+		u8sfree(ns1);
+	// defensive code
+	if (n2 && ns2)
+		u8sfree(ns2);
+	panic("Normalizing u8s failed.");
+}
+
+u8s u8sjoin(char **argv, int argc, char *sep)
+{
+	u8s join = u8sempty();
+	int j;
+
+	for (j = 0; j < argc; ++j) {
+		join = u8scat(join, argv[j]);
+		if (j != argc - 1)
+			join = u8scat(join, sep);
+	}
+
+	return join;
+}
+
+u8s u8sjoinu8s(u8s *argv, int argc, const char *sep, size_t seplen)
+{
+	u8s join = u8sempty();
+
+	int j;
+
+	for (j = 0; j < argc; ++j) {
+		join = u8scatu8s(join, argv[j]);
+		if (j != argc - 1)
+			join = u8scatlen(join, sep, seplen);
+	}
+	return join;
 }
 
 u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts)
