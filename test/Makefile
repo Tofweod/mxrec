@@ -25,6 +25,10 @@ u8s-basic: u8s-basic.c
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) 
 	@echo "Built $@"
 
+lastfm-source: lastfm-source.c
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) 
+	@echo "Built $@"
+
 clean:
 	rm -rf $(TARGETS)
 
