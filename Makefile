@@ -9,6 +9,7 @@ LIB_DIR = lib
 LIB_SUBDIR += . utf8proc
 
 MAKE = make
+CMAKE = cmake
 CC = gcc
 C_FLAGS = -g -Wall
 LD = $(CC)
@@ -27,7 +28,8 @@ endif
 SRCS += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.$(TYPE)}}
 OBJS += ${foreach src, $(notdir $(SRCS)), ${patsubst %.$(TYPE), $(OBJ_DIR)/%.o, $(src)}}
 LIBS = \
-	lib/utf8proc/libutf8proc.$(LIB_TYPE)
+	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
+	lib/iniparser/libiniparser.$(LIB_TYPE)
 
 
 vpath %.$(TYPE) $(sort $(dir $(SRCS)))
@@ -41,6 +43,10 @@ lib/utf8proc/libutf8proc.$(LIB_TYPE):
 	@echo "Building lib for utf8proc..."
 	$(MAKE) -C lib/utf8proc
 
+lib/iniparser/libiniparser.$(LIB_TYPE):
+	@echo "Building lib for iniparser..."
+	$(CMAKE) -S lib/iniparser
+
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
 	@echo "Linking" $@ "from" $^ "..."
@@ -51,7 +57,6 @@ $(OBJS) : $(OBJ_DIR)/%.o:%.$(TYPE) $(LIBS)
 	@mkdir -p $(@D)
 	@echo "Compiling" $@ "from" $< "..."
 	$(CC) -MMD -MP -c -o $@ $< $(C_FLAGS) $(INCLUDES)
-	@echo "Compile finished\n"
 
 test: $(OBJS)
 	@echo "Start building tests\n"

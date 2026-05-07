@@ -10,7 +10,7 @@ int main()
 		return 1;
 	}
 
-	recomm_single(s,NULL);
+	recomm_single(s,NULL,.level=RECOMM_FULL);
 	source_free(s);
 	
 	return 0;

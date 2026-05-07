@@ -1,10 +1,9 @@
 #ifndef TOF_MXREC_SOURCE_H
 #define TOF_MXREC_SOURCE_H
 
+#include "playlist.h"
 #include "xmalloc.h"
 #include <stddef.h>
-
-typedef struct playlist playlist;
 
 /**
  * void* pointer 'sp' points to a concret source implement.
@@ -18,18 +17,34 @@ typedef struct playlist playlist;
  * ```
  */
 typedef struct source source;
+
 typedef struct recomm_option {
+	/**
+	 *
+	 */
+	enum recomm_level {
+		RECOMM_SIMPLE = 0,
+		RECOMM_FULL = 1,
+	} level;
 
 } recomm_option;
 
 // function filed
 
+// remove relative resources here, release the memory by `source_free`
 typedef void (*source_destroy)(void *sp);
-typedef int (*recomm_single_fp)(source *s, playlist *p, recomm_option opts);
+/**
+ * store recomm result in pointer p.
+ * return 0 on success, else return a negative number when error.
+ */
+typedef int (*recomm_single_fp)(source *s, playentry *p, recomm_option opts);
+/**
+ * recomm lists of tracks with 'num' and store the result in pointer p.
+ * return the real number of array p, else return a negative when error.
+ */
 typedef int (*recomm_multi_fp)(source *s, size_t num, playlist *p, recomm_option opts);
 
 typedef struct source {
-	// remove relative resources here
 	source_destroy destroy;
 
 	recomm_multi_fp rmp;
@@ -43,7 +58,7 @@ typedef struct source {
 	void *userdata;
 } source;
 
-static inline int _recomm_single(void *sp, playlist *p, recomm_option opts)
+static inline int _recomm_single(void *sp, playentry *p, recomm_option opts)
 {
 	source *s = (source *)sp;
 	return s->rsp(s, p, opts);
