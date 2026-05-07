@@ -6,7 +6,7 @@ INCLUDE_DIR += lib src
 OBJ_DIR = obj
 
 LIB_DIR = lib
-LIB_SUBDIR += . utf8proc
+LIB_SUBDIR += . utf8proc iniparser
 
 MAKE = make
 CMAKE = cmake
@@ -17,7 +17,7 @@ LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
 LIB_DIRS += $(addprefix -L$(LIB_DIR), LIB_SUBDIR)
 LD_FLAGS += -L$(LIB_DIRS) 
-LD_LIBS = -lutf8proc
+LD_LIBS =
 
 ifeq ($(CC), g++)
 	TYPE = cpp
@@ -45,7 +45,8 @@ lib/utf8proc/libutf8proc.$(LIB_TYPE):
 
 lib/iniparser/libiniparser.$(LIB_TYPE):
 	@echo "Building lib for iniparser..."
-	$(CMAKE) -S lib/iniparser
+	$(CMAKE) -S lib/iniparser -B lib/iniparser
+	$(MAKE) -C lib/iniparser
 
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
