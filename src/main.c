@@ -1,9 +1,11 @@
-#include "config.h"
+#include "global.h"
 #include "mxrec.h"
-#include "iniparser/iniparser.h"
 
 int main(int argc, char **argv)
 {
+	globalCurlInit();
+
+	globalCurlCleanup();
 	return 0;
 
 }

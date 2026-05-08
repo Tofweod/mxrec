@@ -2,6 +2,7 @@
 #define TOF_MXREC_COMM_H
 
 #include <stdbool.h>
+#include <stdlib.h>
 
 #if __GNUC__ >= 5 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
 #define mxrec_unreachable __builtin_unreachable
@@ -17,5 +18,14 @@
 #define unlikely(x) (x)
 #endif
 
+#ifdef __GNUC__
+#define unused __attribute__((__unused__))
+#define noinline __attribute__((noinline))
+#define packed __attribute__((__packed__))
+#elif
+#define unused
+#define noinline
+#define packed
+#endif
 
 #endif

@@ -1,5 +1,7 @@
 #include "lastfm.h"
 #include "assert.h"
+#include "config.h"
+#include "global.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
@@ -23,14 +25,21 @@ static source __lastfm_source = {
 
 struct lastfm_source {
 	source src;
+	CURL *curl;
+
+	config_t *cfg;
 };
 
 static inline int lastfm_source_init(void *sp)
 {
+	globalCurlInit();
 	lastfm_source *s = (lastfm_source *)sp;
 	s->src = __lastfm_source;
 
-	// TODO another initialization works
+	s->curl = curl_easy_init();
+
+	s->cfg = getGlobalConfig();
+
 	return 0;
 }
 
@@ -55,13 +64,14 @@ static inline int _lastfm_recomm_single_full(source *s, playentry *p, recomm_opt
 
 static inline int _lastfm_recomm_single_simple(source *s, playentry *p, recomm_option opts)
 {
-	// TODO
 }
 
 static inline void lastfm_source_destroy(void *sp)
 {
 	printf("Calling lastfm destroy\n");
 	// TODO
+	lastfm_source *s = (lastfm_source *)sp;
+	curl_easy_cleanup(s->curl);
 }
 
 static inline int lastfm_recomm_single(source *s, playentry *p, recomm_option opts)
@@ -78,9 +88,13 @@ static inline int lastfm_recomm_single(source *s, playentry *p, recomm_option op
 static inline int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	if (opts.level == RECOMM_FULL) {
-		// error report
-		return -1;
+		panic("lastfm source don't support full level recommendation.");
 	}
 	assert(opts.level == RECOMM_SIMPLE);
-	// TODO
+	lastfm_source *ls = (lastfm_source *)s;
+	CURL *curl = ls->curl;
+
+	curl_easy_perform(curl);
+	/* curl_easy_reset(curl); */
+	return 0;
 }

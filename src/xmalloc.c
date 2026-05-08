@@ -39,8 +39,10 @@ xmalloc(size_t size)
 	return ptr;
 }
 
-void xfree(void *ptr) {
-	if(ptr == NULL) return;
+void xfree(void *ptr)
+{
+	if (ptr == NULL)
+		return;
 	free(ptr);
 }
 
@@ -96,6 +98,8 @@ char *
 xstrdup(const char *str)
 {
 	char *cp;
+	if (str == NULL)
+		return NULL;
 
 	if ((cp = strdup(str)) == NULL)
 		fatalx("xstrdup: %s", strerror(errno));
@@ -106,6 +110,8 @@ char *
 xstrndup(const char *str, size_t maxlen)
 {
 	char *cp;
+	if (str == NULL)
+		return NULL;
 
 	if ((cp = strndup(str, maxlen)) == NULL)
 		fatalx("xstrndup: %s", strerror(errno));

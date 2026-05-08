@@ -63,6 +63,7 @@ static inline int _recomm_single(void *sp, playentry *p, recomm_option opts)
 	source *s = (source *)sp;
 	return s->rsp(s, p, opts);
 }
+
 static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option opts)
 {
 	source *s = (source *)sp;

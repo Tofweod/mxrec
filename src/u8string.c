@@ -11,7 +11,7 @@ extern u8s_norm_t default_norm_type;
 u8s_norm_t default_norm_type = U8S_NFKC;
 
 // u8shdr
-struct __attribute__((__packed__)) u8shdr {
+struct packed u8shdr {
 	// byte len of u8s
 	size_t len;
 	// alloced bytes of current string
@@ -119,7 +119,7 @@ static inline u8s _u8snewlen(const void *init, size_t len)
 	assert(bufsize > reallen);
 	buf = xmalloc(bufsize);
 
-	if (buf == NULL) {
+	if (unlikely(buf == NULL)) {
 		ret = NULL;
 		goto cleanup;
 	}
@@ -197,7 +197,7 @@ static inline u8s _u8sExpand(u8s s, size_t addlen)
 	assert(newlen > len);
 
 	newh = xrealloc(h, hdrlen + newlen + 1);
-	if (newh == NULL)
+	if (unlikely(newh == NULL))
 		return NULL;
 	s = (u8s)newh + hdrlen;
 	u8s_set(s, alloc, newlen);
@@ -423,7 +423,7 @@ u8s u8scatvprintf(u8s s, const char *fmt, va_list ap)
 
 	while (1) {
 		va_copy(cp, ap);
-		// do not use 
+		// do not use
 		bufstrlen = vsnprintf(buf, buflen, fmt, cp);
 		va_end(cp);
 		if (bufstrlen < 0) {
@@ -562,7 +562,7 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts)
 
 	buf = xmalloc(bufsize);
 
-	if (buf == NULL) {
+	if (unlikely(buf == NULL)) {
 		ret = NULL;
 		goto cleanup;
 	}

@@ -17,7 +17,7 @@ LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
 LIB_DIRS += $(addprefix -L$(LIB_DIR), LIB_SUBDIR)
 LD_FLAGS += -L$(LIB_DIRS) 
-LD_LIBS =
+LD_LIBS = -lcurl
 
 ifeq ($(CC), g++)
 	TYPE = cpp

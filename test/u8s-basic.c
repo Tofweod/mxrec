@@ -32,11 +32,15 @@ int main(int argc, char **argv)
 	printf("%s\n",s4);
 	printf("%s\n",s5);
 
+	u8s s6 = u8snew(NULL);
+	printf("%zu\n",u8sblen(s6));
+
 	u8sfree(s1);
 	u8sfree(s2);
 	u8sfree(s3);
 	u8sfree(s4);
 	u8sfree(s5);
+	u8sfree(s6);
 
 
 	return 0;

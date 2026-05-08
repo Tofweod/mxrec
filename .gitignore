@@ -3,3 +3,4 @@ compile_commands.json
 mxrec
 obj/
 .gdb_history
+*.ini
