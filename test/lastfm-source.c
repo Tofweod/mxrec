@@ -1,13 +1,20 @@
-#include "global.h"
+#include "config.h"
+#include "monotonic.h"
 #include "source.h"
 #include "source/lastfm.h"
 #include <stdio.h>
 
 int main()
 {
-	loadGlobalConfig("../example.ini");
+	config_t cfg;
 	source *s;
-	if (lastfm_source_new(&s) < 0) {
+	const char *configfile = "../example.ini";
+	if (!load_config(configfile, &cfg)) {
+		printf("failed to load config file:%s\n", configfile);
+		return 1;
+	}
+
+	if (lastfm_source_new(&s, &cfg) < 0) {
 		printf("failed to create source");
 		return 1;
 	}
@@ -16,7 +23,6 @@ int main()
 	source_free(s);
 
 	globalCurlCleanup();
-	globalConfigCleanup();
 
 	return 0;
 }
