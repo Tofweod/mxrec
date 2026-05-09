@@ -1,7 +1,7 @@
 #include "lastfm.h"
 #include "assert.h"
 #include "config.h"
-#include "global.h"
+#include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
@@ -30,7 +30,7 @@ struct lastfm_source {
 	config_t *cfg;
 };
 
-static inline int lastfm_source_init(void *sp)
+static inline int lastfm_source_init(void *sp, config_t *cfg)
 {
 	globalCurlInit();
 	lastfm_source *s = (lastfm_source *)sp;
@@ -38,18 +38,19 @@ static inline int lastfm_source_init(void *sp)
 
 	s->curl = curl_easy_init();
 
-	s->cfg = getGlobalConfig();
+	s->cfg = cfg;
 
 	return 0;
 }
 
-int lastfm_source_new(source **src)
+int lastfm_source_new(source **src, config_t *cfg)
 {
+	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfm_source));
 	if (s == NULL)
 		return -1;
-	if (lastfm_source_init(s) < 0) {
+	if (lastfm_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
 	}

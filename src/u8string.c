@@ -63,21 +63,26 @@ static inline size_t u8savail(const u8s s)
 // static auxiliary functions
 #define u8s_set(s, field, val) (U8S_HDR((s))->field = (val))
 #define u8s_get(s, field) (U8S_HDR((s))->field)
+#define u8s_set_result(res, code)        \
+	do                               \
+		if ((res))               \
+			*(res) = (code); \
+	while (0)
 
 static inline u8s_norm_t u8soption2normtype(u8s_option_t type)
 {
-	if (type & (U8S_COMPOSE | U8S_COMPAT)) {
+	if ((type & U8S_COMPOSE) && (type & U8S_COMPAT)) {
 		return U8S_NFKC;
-	} else if (type & (U8S_DECOMPOSE | U8S_COMPAT)) {
+	} else if ((type & U8S_DECOMPOSE) && (type & U8S_COMPAT)) {
 		return U8S_NFKD;
 	} else if (type & U8S_COMPOSE) {
 		return U8S_NFC;
 	} else if (type & U8S_DECOMPOSE) {
 		return U8S_NFD;
 	} else {
-		panic("Cannot extract normalization type from options");
+		error("Cannot extract normalization type from options");
 	}
-	mxrec_unreachable();
+	return U8S_NINV;
 }
 
 static inline u8s_option_t u8snormtype2option(u8s_norm_t type)
@@ -92,9 +97,9 @@ static inline u8s_option_t u8snormtype2option(u8s_norm_t type)
 	case U8S_NFKD:
 		return U8S_DECOMPOSE | U8S_COMPAT;
 	default:
-		panic("Unknown u8s normaliziton type");
+		error("Unknown u8s normalization type");
 	}
-	mxrec_unreachable();
+	return U8S_NONE;
 }
 
 static inline u8s _u8snewlen(const void *init, size_t len)
@@ -132,9 +137,9 @@ cleanup:
 }
 
 /**
- * cmp between u8s on raw data that have the same normaliziton standard.
+ * cmp between u8s on raw data that have the same normalization standard.
  */
-static inline int _u8scmp(const u8s s1, size_t l1, const u8s s2, size_t l2)
+static inline int _u8scmpbinary(const u8s s1, size_t l1, const u8s s2, size_t l2)
 {
 	size_t minlen;
 	int cmp;
@@ -148,7 +153,7 @@ static inline int _u8scmp(const u8s s1, size_t l1, const u8s s2, size_t l2)
 /*
  * cmp between two u8s both of that are normalized.
  */
-static inline int _u8scmpNorm(const u8s s1, const u8s s2)
+static inline int _u8scmpNorm(const u8s s1, const u8s s2, int *result)
 {
 	struct u8shdr *h1, *h2;
 	size_t l1, l2;
@@ -163,17 +168,19 @@ static inline int _u8scmpNorm(const u8s s1, const u8s s2)
 	l2 = h2->len;
 
 	if (h1->type == h2->type) {
-		return _u8scmp(s1, l1, s2, l2);
+		return _u8scmpbinary(s1, l1, s2, l2);
 	}
-	// convert s2 into s1' normaliziton
+	// convert s2 into s1' normalization
 	else {
 		ret = utf8proc_map(s2, l2, &ns,
 				   (utf8proc_option_t)u8snormtype2option(h1->type));
-		if (ret < 0)
-			panic("Normalizing u8s failed:%s", s2);
+		if (ret < 0) {
+			error("Normalizing u8s failed:%s", s2);
+			u8s_set_result(result, U8S_ERR_NORM);
+		}
 	}
 
-	cmp = _u8scmp(s1, l2, ns, ret);
+	cmp = _u8scmpbinary(s1, l2, ns, ret);
 
 	utf8proc_free(ns);
 
@@ -302,15 +309,18 @@ u8s u8scpylen(u8s s, const void *t, size_t len)
 	return s;
 }
 
-void u8snormalize(u8s *s, u8s_norm_t type)
+int u8snormalize(u8s *s, u8s_norm_t type)
 {
+	int result = U8S_OK;
 
 	u8s new_s, old_s = *s;
 	new_s = u8s_proc(old_s, u8sblen(old_s),
-			 u8snormtype2option(type));
+			 u8snormtype2option(type), &result);
 	u8sfree(old_s);
 	*s = new_s;
 	u8s_set(*s, valid_type, 1);
+
+	return result;
 }
 
 u8cp u8cpdecode(void *cp)
@@ -467,22 +477,34 @@ void u8sclear(u8s s)
 	s[0] = '\0';
 }
 
-int u8scmp(const u8s s1, const u8s s2)
+int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type)
 {
 	int cmp;
 	struct u8shdr *h1, *h2;
 	u8s ns1, ns2;
 	bool n1 = false, n2 = false;
+	u8s_norm_t cur_type;
+
+	if (result)
+		*result = U8S_OK;
 
 	h1 = U8S_HDR(s1);
 	h2 = U8S_HDR(s2);
 
-	if (h1->valid_type && h2->valid_type) {
-		return _u8scmpNorm(s1, s2);
+	// first cmp rule
+	if (type == U8S_DEFAULT && h1->valid_type && h2->valid_type) {
+		return _u8scmpNorm(s1, s2, result);
+	}
+
+	cur_type = type == U8S_DEFAULT ? default_norm_type : type;
+	if (cur_type == U8S_DEFAULT) {
+		error("do not use U8S_DEFAULT normalization type explicitly.");
+		u8s_set_result(result, U8S_ERR_INVALID_TYPE);
+		return 0;
 	}
 	if (h1->valid_type == 0) {
 		ns1 = u8s_proc(s1, u8sblen(s1),
-			       u8snormtype2option(default_norm_type));
+			       u8snormtype2option(cur_type), result);
 		n1 = true;
 		if (ns1 == NULL)
 			goto err;
@@ -491,7 +513,7 @@ int u8scmp(const u8s s1, const u8s s2)
 	}
 	if (h2->valid_type == 0) {
 		ns2 = u8s_proc(s2, u8sblen(s2),
-			       u8snormtype2option(default_norm_type));
+			       u8snormtype2option(cur_type), result);
 		n2 = true;
 		if (ns1 == NULL)
 			goto err;
@@ -499,7 +521,7 @@ int u8scmp(const u8s s1, const u8s s2)
 		ns2 = s2;
 	}
 
-	cmp = _u8scmp(ns1, u8sblen(ns1), ns2, u8sblen(ns2));
+	cmp = _u8scmpbinary(ns1, u8sblen(ns1), ns2, u8sblen(ns2));
 
 	if (n1)
 		u8sfree(ns1);
@@ -509,12 +531,15 @@ int u8scmp(const u8s s1, const u8s s2)
 	return cmp;
 
 err:
-	if (n1 && ns1)
+	if (n1 && ns1) {
+		error("Normalizing failed, u8s is :%s\n.", ns1);
 		u8sfree(ns1);
-	// defensive code
-	if (n2 && ns2)
+	}
+	if (n2 && ns2) {
+		error("Normalizing failed, u8s is :%s\n.", ns2);
 		u8sfree(ns2);
-	panic("Normalizing u8s failed.");
+	}
+	return 0;
 }
 
 u8s u8sjoin(char **argv, int argc, char *sep)
@@ -545,7 +570,7 @@ u8s u8sjoinu8s(u8s *argv, int argc, const char *sep, size_t seplen)
 	return join;
 }
 
-u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts)
+u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result)
 {
 	u8s dst, buf, ret;
 	size_t bufsize;
@@ -555,6 +580,7 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts)
 
 	if (dstlen < 0) {
 		ret = NULL;
+		u8s_set_result(result, U8S_ERR_NORM);
 		goto cleanup;
 	}
 
@@ -564,6 +590,7 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts)
 
 	if (unlikely(buf == NULL)) {
 		ret = NULL;
+		u8s_set_result(result, U8S_ERR_OOM);
 		goto cleanup;
 	}
 

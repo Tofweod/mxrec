@@ -1,13 +1,10 @@
 #include "assert.h"
-#include "config.h"
-#include "global.h"
+#include "monotonic.h"
 #include <curl/curl.h>
 #include <stdbool.h>
 
 static bool global_curl_init = false;
 static bool global_curl_cleanup = false;
-
-static config_t *mxrec_glocal_config = NULL;
 
 void globalCurlInit(void)
 {
@@ -25,30 +22,4 @@ void globalCurlCleanup(void)
 		panic("cleanup golbal curl before initialization");
 	curl_global_cleanup();
 	global_curl_cleanup = true;
-}
-
-config_t *getGlobalConfig(void)
-{
-	if (mxrec_glocal_config == NULL) {
-		panic("global config has not been loaded.");
-	}
-	return mxrec_glocal_config;
-}
-
-void globalConfigCleanup(void)
-{
-	if (mxrec_glocal_config != NULL)
-		configfree(mxrec_glocal_config);
-}
-
-void globalCleanup(void)
-{
-	globalCurlCleanup();
-	globalConfigCleanup();
-}
-
-void loadGlobalConfig(const char *filename)
-{
-	if (mxrec_glocal_config == NULL)
-		load_config(&mxrec_glocal_config, filename);
 }

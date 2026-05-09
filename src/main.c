@@ -1,4 +1,3 @@
-#include "global.h"
 #include "mxrec.h"
 
 int main(int argc, char **argv)

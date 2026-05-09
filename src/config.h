@@ -2,6 +2,7 @@
 #define TOF_MXREC_CONFIG_H
 
 #include "u8string.h"
+#include <limits.h>
 #include <stdint.h>
 
 #define CONFIG_FIELD_LIST                                 \
@@ -21,10 +22,11 @@ typedef struct config_t {
 #undef CONFIG_FIELD
 } config_t;
 
-void load_config(config_t **cfg, const char *filename);
+bool load_config(const char *filename, config_t *cfg);
 
-int load_config_from_file(const char *filename, config_t **cfg);
-
+/** it simply free fields in config struct, if config itself is heap memory,
+ *  please free it manually
+ */
 void configfree(config_t *cfg);
 
 #endif // !TOF_MXREC_CONFIG_H

@@ -3,22 +3,35 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#define MAX_LOG_SIZE 256
+#define MAX_LOG_SIZE 1024
+
+static char log_buf[MAX_LOG_SIZE];
+
+static inline void _printflevel(const char *level, const char *msg)
+{
+	printf("[%s]:%s\n", level, msg);
+}
 
 noinline void _Assert(const char *estr, const char *file, int line)
 {
-
-	printf("[Assert failed]:%s in %s:%d\n", estr, file, line);
+	snprintf(log_buf, sizeof(log_buf), "%s failed in %s:%d", estr, file, line);
+	_printflevel("Assert", log_buf);
 }
 
 noinline void _Panic(const char *file, int line, const char *msg, ...)
 {
-	// TODO
-	static char buf[MAX_LOG_SIZE];
 	va_list ap;
 	va_start(ap, msg);
-	vsnprintf(buf, sizeof(buf), msg, ap);
+	vsnprintf(log_buf, sizeof(log_buf), msg, ap);
+	_printflevel("Panic", log_buf);
+	va_end(ap);
+}
 
-	printf("[Panic]: trigged at %s:%d :%s\n", file, line, buf);
+noinline void _Error(const char *file, int line, const char *msg, ...)
+{
+	va_list ap;
+	va_start(ap, msg);
+	vsnprintf(log_buf, sizeof(log_buf), msg, ap);
+	_printflevel("Error", log_buf);
 	va_end(ap);
 }

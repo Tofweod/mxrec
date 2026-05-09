@@ -10,7 +10,6 @@ int main()
 	source *s;
 	const char *configfile = "../example.ini";
 	if (!load_config(configfile, &cfg)) {
-		printf("failed to load config file:%s\n", configfile);
 		return 1;
 	}
 
@@ -22,6 +21,7 @@ int main()
 	recomm_multi(s, 1, NULL, .level = RECOMM_SIMPLE);
 	source_free(s);
 
+	configfree(&cfg);
 	globalCurlCleanup();
 
 	return 0;

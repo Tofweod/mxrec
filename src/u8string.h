@@ -32,6 +32,12 @@
 #include "utf8proc/utf8proc.h"
 #include <stdarg.h>
 
+// status code of normalization operations
+#define U8S_OK 0
+#define U8S_ERR_OOM 1
+#define U8S_ERR_NORM 2
+#define U8S_ERR_INVALID_TYPE 3
+
 // wrapper of utf8proc string
 typedef utf8proc_uint8_t *u8s;
 
@@ -70,13 +76,16 @@ typedef enum {
 #define U8S_OPTION(type) U8S_##type = UTF8PROC_##type,
 	U8S_OPTION_LIST
 #undef U8S_OPTION
+		U8S_NONE = (1 << 15),
 } u8s_option_t;
 
 typedef enum {
+	U8S_DEFAULT = 0, // don't use explicitly
+	U8S_NINV,	 // invalid
 	U8S_NFC,
 	U8S_NFD,
-	U8S_NFKC,
 	U8S_NFKD,
+	U8S_NFKC,
 } u8s_norm_t;
 
 extern u8s_norm_t default_norm_type;
@@ -104,9 +113,10 @@ u8s u8sexpandzero(u8s s, size_t len);
 
 /**
  * u8s operated such as cat, cpy will simply use memory operations in stdlib.h
- * And it just change raw data without normaliziton.
+ * And it just change raw data without normalization.
  * Thus the type field of is no longer valid and the valid_type filed is set to 0,
  * until explicit calling `u8snormalize`.
+ * Return NULL on error.
  */
 // cat with binary-safe string pointed by 't' of 'len' bytes
 u8s u8scatlen(u8s s, const void *t, size_t len);
@@ -127,7 +137,7 @@ u8s u8scatprintf(u8s s, const char *fmt, ...)
 u8s u8scatprintf(u8s s, const char *fmt, ...);
 #endif
 
-void u8snormalize(u8s *s, u8s_norm_t type);
+int u8snormalize(u8s *s, u8s_norm_t type);
 
 // return -1 on error
 u8cp u8cpdecode(void *cp);
@@ -138,15 +148,20 @@ u8cp *u8s2codepoint(const u8s s, size_t *len);
 void u8strim(u8s s, const u8s cset);
 // TODO paramter type
 void u8ssubstr(u8s s, size_t start, size_t len);
-void u8srange(u8s s,u8s_ssize_t start,u8s_ssize_t end);
+void u8srange(u8s s, u8s_ssize_t start, u8s_ssize_t end);
 void u8sclear(u8s s);
 
 /**
  * u8scmp
- * If s1 and s2 are the same after normaliziton. we regarded that they are the
- * same. Use default_norm_type to normalize.
+ * When we don't set normalization standard, the comparation rule is as follow:
+ * If s1 and s2 are the same after normalization. we regarded that they are the
+ * same. Both of them will be compared on 'default_norm_type'.
+ * Else s1 and s2 are transform into assigned normalization and then compare.
+ * The normalization may failed, therefore it needs to refer to 'result' before
+ * using return value.
  */
-int u8scmp(const u8s s1, const u8s s2);
+#define u8scmp(s1, s2, r, ...) _u8scmp((s1), (s2), (r), (u8s_norm_t){__VA_ARGS__})
+int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type);
 u8s u8scatrepr(u8s s, const char *p, u8s_size_t len);
 u8s u8sjoin(char **argv, int argc, char *sep);
 u8s u8sjoinu8s(u8s *argv, int argc, const char *sep, size_t seplen);
@@ -162,6 +177,6 @@ int u8sneedsrepr(const u8s s);
  * I am not sure what will happen if strlen is smaller than strlen(str) without
  * UTF8PROC_NULLTERM flag, so here `srclen` is simply passed into `strlen` of utf8proc_map
  */
-u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts);
+u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result);
 
 #endif // !TOF_MXREC_U8STRING_H
