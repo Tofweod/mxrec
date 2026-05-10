@@ -89,7 +89,7 @@ static inline int lastfm_recomm_single(source *s, playentry *p, recomm_option op
 static inline int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	if (opts.level == RECOMM_FULL) {
-		panic("lastfm source don't support full level recommendation.");
+		panic("lastfm source don't support full level recommendation");
 	}
 	assert(opts.level == RECOMM_SIMPLE);
 	lastfm_source *ls = (lastfm_source *)s;

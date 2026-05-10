@@ -9,7 +9,7 @@ static char log_buf[MAX_LOG_SIZE];
 
 static inline void _printflevel(const char *level, const char *msg)
 {
-	printf("[%s]:%s\n", level, msg);
+	printf("[%s]: %s\n", level, msg);
 }
 
 noinline void _Assert(const char *estr, const char *file, int line)
@@ -18,20 +18,25 @@ noinline void _Assert(const char *estr, const char *file, int line)
 	_printflevel("Assert", log_buf);
 }
 
-noinline void _Panic(const char *file, int line, const char *msg, ...)
+noreturn noinline void _Panic(const char *file, int line, const char *msg, ...)
 {
+	static char buf[MAX_LOG_SIZE / 2];
 	va_list ap;
 	va_start(ap, msg);
-	vsnprintf(log_buf, sizeof(log_buf), msg, ap);
+	vsnprintf(buf, sizeof(buf), msg, ap);
+	snprintf(log_buf, sizeof(log_buf), "%s in %s:%d", buf, file, line);
 	_printflevel("Panic", log_buf);
 	va_end(ap);
+	abort();
 }
 
 noinline void _Error(const char *file, int line, const char *msg, ...)
 {
+	static char buf[MAX_LOG_SIZE / 2];
 	va_list ap;
 	va_start(ap, msg);
-	vsnprintf(log_buf, sizeof(log_buf), msg, ap);
+	vsnprintf(buf, sizeof(buf), msg, ap);
+	snprintf(log_buf, sizeof(log_buf), "%s in %s:%d", buf, file, line);
 	_printflevel("Error", log_buf);
 	va_end(ap);
 }

@@ -22,6 +22,7 @@
 #define unused __attribute__((__unused__))
 #define noinline __attribute__((noinline))
 #define packed __attribute__((__packed__))
+#define noreturn __attribute__((__noreturn__))
 #elif
 #define unused
 #define noinline

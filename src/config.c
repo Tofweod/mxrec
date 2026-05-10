@@ -57,9 +57,10 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	return config_check(cfg);
 }
 
-static const char *default_configs[] = {
-	"/etc/mxrec/config.ini",
-	"",
+static const char *default_config_dirs[] = {
+	"$XDG_CONFIG_HOME/mxrec/",
+	"$HOME/.config/",
+	"$HOME/.config/mxrec/",
 	NULL,
 };
 
@@ -70,7 +71,7 @@ bool load_config(const char *filename, config_t *cfg)
 		return load_config_from_file(filename, cfg);
 	}
 
-	cur = default_configs;
+	cur = default_config_dirs;
 	while (*cur) {
 		cur++;
 	}

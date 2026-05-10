@@ -11,7 +11,7 @@
  * lastfm as example for the usage of source_init:
  * ```c
  * source *s;
- * if(lastfm_source_new(&s) < 0) {
+ * if(lastfm_source_new(&s,cfg) < 0) {
  * 	// error
  * }
  * ```
