@@ -9,12 +9,15 @@
 	CONFIG_FIELD(uint64_t, timeout, (void))           \
 	CONFIG_FIELD(uint64_t, max_try, (void))           \
 	CONFIG_FIELD(char *, lastfm_base_url, xfree)      \
-	CONFIG_FIELD(char *, lastfm_user_agent, xfree)    \
 	CONFIG_FIELD(u8s, lastfm_username, u8sfree)       \
+	CONFIG_FIELD(char*, lastfm_security_profile, xfree)       \
 	CONFIG_FIELD(char *, lastfm_mrc_path, xfree)      \
+	CONFIG_FIELD(bool, lastfm_mrc_auth, (void))       \
 	CONFIG_FIELD(char *, lastfm_mrc_method, xfree)    \
 	CONFIG_FIELD(char *, lastfm_mrc_parameter, xfree) \
-	CONFIG_FIELD(char *, lastfm_mrc_accept, xfree)
+	CONFIG_FIELD(char *, lastfm_mrc_accept, xfree)    \
+	CONFIG_FIELD(char *, ncm_email, xfree)            \
+	CONFIG_FIELD(char *, ncm_cookie, xfree)
 
 typedef struct config_t {
 #define CONFIG_FIELD(type, name, ...) type name;

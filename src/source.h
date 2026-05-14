@@ -3,6 +3,7 @@
 
 #include "playlist.h"
 #include "xmalloc.h"
+#include <stdbool.h>
 #include <stddef.h>
 
 /**
@@ -27,6 +28,7 @@ typedef struct recomm_option {
 		RECOMM_FULL = 1,
 	} level;
 
+	bool use_security;
 } recomm_option;
 
 // function filed
@@ -44,12 +46,16 @@ typedef int (*recomm_single_fp)(source *s, playentry *p, recomm_option opts);
  */
 typedef int (*recomm_multi_fp)(source *s, size_t num, playlist *p, recomm_option opts);
 
+typedef void (*security_handle)(source *s);
+
 typedef struct source {
 	source_destroy destroy;
 
 	recomm_multi_fp rmp;
 
 	recomm_single_fp rsp;
+
+	security_handle sh;
 	/// security module
 	/// some sources may restrict or even ban the access,
 	/// this module is used for bypass such limitations.
@@ -79,6 +85,12 @@ static inline void source_free(source *s)
 static inline void source_setuserdata(source *s, void *data)
 {
 	s->userdata = data;
+}
+
+static inline void perform_security(void *sp)
+{
+	source *s = (source *)sp;
+	s->sh(s);
 }
 
 #define recomm_single(s, p, ...) _recomm_single((s), (p), (recomm_option){__VA_ARGS__})
