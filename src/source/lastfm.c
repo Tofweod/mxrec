@@ -1,12 +1,12 @@
 #include "lastfm.h"
 #include "assert.h"
 #include "config.h"
+#include "curl-impersonate.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
 #include "util.h"
-#include <curl/curl.h>
 
 typedef struct lastfm_security {
 	char *profile;
@@ -115,6 +115,7 @@ static inline int lastfm_recomm_single(source *s, playentry *p, recomm_option op
 
 static inline int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
+	CURLcode code;
 	if (opts.level == RECOMM_FULL) {
 		panic("lastfm source don't support full level recommendation");
 	}
@@ -125,14 +126,24 @@ static inline int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm
 
 	CURL *curl = ls->curl;
 
-	curl_easy_perform(curl);
+	code = curl_easy_perform(curl);
+	if (code != CURLE_OK) {
+	}
 	/* curl_easy_reset(curl); */
 	return 0;
 }
 
 static void lastfm_security_handle(source *s)
 {
+	CURLcode code = CURLE_OK;
 	lastfm_source *ls = (lastfm_source *)s;
+	lastfm_security *lsc = (lastfm_security *)(s->security);
 	CURL *curl = ls->curl;
-	// impernosate
+	// impersonate
+	code = curl_easy_impersonate(curl, lsc->profile, 1L);
+	if (code != CURLE_OK) {
+		error("impersonate failed with profile %s:\'%s\', using curl without security", lsc->profile,
+		      curl_easy_strerror(code));
+		curl_easy_reset(curl);
+	}
 }

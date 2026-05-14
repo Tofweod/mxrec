@@ -48,7 +48,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	// lastfm
 	cfg->lastfm_base_url = xstrdup(iniparser_getstring(d, "lastfm:base-url", NULL));
 	cfg->lastfm_username = u8snew(iniparser_getstring(d, "lastfm:username", NULL));
-	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "firefox133"));
+	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "chrome116"));
 
 	// lastfm multi_recomm
 	cfg->lastfm_mrc_path = xstrdup(iniparser_getstring(d, "lastfm.multi-recomm:path", NULL));

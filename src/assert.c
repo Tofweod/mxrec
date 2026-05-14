@@ -9,7 +9,7 @@ static char log_buf[MAX_LOG_SIZE];
 
 static inline void _printflevel(const char *level, const char *msg)
 {
-	printf("[%s]: %s\n", level, msg);
+	fprintf(stderr, "[%s]: %s\n", level, msg);
 }
 
 noinline void _Assert(const char *estr, const char *file, int line)

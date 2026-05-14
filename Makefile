@@ -15,9 +15,9 @@ C_FLAGS = -g -Wall
 LD = $(CC)
 LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
-LIB_DIRS += $(addprefix -L$(LIB_DIR), LIB_SUBDIR)
-LD_FLAGS += -L$(LIB_DIRS) 
-LD_LIBS = -lcurl
+LIB_DIRS += -Llib/utf8proc -Llib/iniparser -Llib/curl-impersonate
+LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,lib/curl-impersonate/
+LD_LIBS = -lcurl-impersonate-chrome 
 
 ifeq ($(CC), g++)
 	TYPE = cpp
@@ -29,7 +29,7 @@ SRCS += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.$(TYP
 OBJS += ${foreach src, $(notdir $(SRCS)), ${patsubst %.$(TYPE), $(OBJ_DIR)/%.o, $(src)}}
 LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
-	lib/iniparser/libiniparser.$(LIB_TYPE)
+	lib/iniparser/libiniparser.$(LIB_TYPE) \
 
 
 vpath %.$(TYPE) $(sort $(dir $(SRCS)))
