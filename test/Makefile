@@ -2,7 +2,7 @@ TARGETS = $(patsubst %.c, %, $(wildcard *.c))
 
 ROOT_SRC = ../src
 ROOT_LIB = ../lib
-OBJS = $(wildcard ../obj/*.o)
+OBJS = $(patsubst ../src/%.c, ../obj/%.o, $(shell find ../src -name "*.c"))
 LIB_OBJS = $(filter-out ../obj/main.o, $(OBJS))
 LIB_DIRS += -L$(ROOT_LIB)/utf8proc -L$(ROOT_LIB)/iniparser -L$(ROOT_LIB)/curl-impersonate
 LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,$(ROOT_LIB)/curl-impersonate/

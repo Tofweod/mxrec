@@ -26,7 +26,7 @@ else
 endif
 
 SRCS += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.$(TYPE)}}
-OBJS += ${foreach src, $(notdir $(SRCS)), ${patsubst %.$(TYPE), $(OBJ_DIR)/%.o, $(src)}}
+OBJS += $(patsubst $(SRC_DIR)/%.$(TYPE), $(OBJ_DIR)/%.o, $(SRCS))
 LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
 	lib/iniparser/libiniparser.$(LIB_TYPE) \
@@ -49,13 +49,18 @@ lib/iniparser/libiniparser.$(LIB_TYPE):
 	$(CMAKE) -S lib/iniparser -B lib/iniparser
 	$(MAKE) -C lib/iniparser
 
+lib/libb64/src/libb64.$(LIB_TYPE):
+	@echo "Building lib for libb64..."
+	$(MAKE) -C lib/libb64
+
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
 	@echo "Linking" $@ "from" $^ "..."
 	$(LD) -o $@ $^ $(LD_FLAGS) $(LD_LIBS)
 	@echo "Link finished\n"
 
-$(OBJS) : $(OBJ_DIR)/%.o:%.$(TYPE) $(LIBS)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.$(TYPE) $(LIBS)
+	@mkdir -p $(dir $@)
 	@mkdir -p $(@D)
 	@echo "Compiling" $@ "from" $< "..."
 	$(CC) -MMD -MP -c -o $@ $< $(C_FLAGS) $(INCLUDES)
@@ -72,8 +77,11 @@ DEP = $(OBJS:.o=.d)
 clean : cleanobj
 	@echo "Remove all executable files"
 	rm -f $(TARGET)
+	make -C lib/iniparser clean
 	make -C lib/utf8proc clean
+	make -C lib/libb64 clean
 	make -C test clean
+
 cleanobj :
 	@echo "Remove object files"
-	rm -rf $(OBJ_DIR)/*.o
+	rm -rf $(OBJ_DIR)

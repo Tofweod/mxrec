@@ -1,4 +1,8 @@
 .gdb_history
+compile_commands.json
+
+# test program
 u8s-basic
 lastfm-source
 b64-qr
+util-string
