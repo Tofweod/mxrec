@@ -1,12 +1,12 @@
 TARGET = mxrec
 
 SRC_DIR = src
-SRC_SUBDIR += . al ex source
+SRC_SUBDIR += . al ex source utils
 INCLUDE_DIR += lib src
 OBJ_DIR = obj
 
 LIB_DIR = lib
-LIB_SUBDIR += . utf8proc iniparser
+LIB_SUBDIR += . utf8proc iniparser libb64
 
 MAKE = make
 CMAKE = cmake
@@ -17,7 +17,7 @@ LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
 LIB_DIRS += -Llib/utf8proc -Llib/iniparser -Llib/curl-impersonate
 LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,lib/curl-impersonate/
-LD_LIBS = -lcurl-impersonate-chrome 
+LD_LIBS = -lcurl-impersonate-chrome -lm 
 
 ifeq ($(CC), g++)
 	TYPE = cpp
@@ -30,6 +30,7 @@ OBJS += ${foreach src, $(notdir $(SRCS)), ${patsubst %.$(TYPE), $(OBJ_DIR)/%.o, 
 LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
 	lib/iniparser/libiniparser.$(LIB_TYPE) \
+	lib/libb64/src/libb64.a
 
 
 vpath %.$(TYPE) $(sort $(dir $(SRCS)))

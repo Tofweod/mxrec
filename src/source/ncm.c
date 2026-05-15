@@ -22,6 +22,7 @@ static source __ncm_source = {
 	.destroy = ncm_source_destroy,
 	.rsp = ncm_recomm_single,
 	.rmp = ncm_recomm_multi,
+	.sh = ncm_security_handle,
 	.security = &__security,
 };
 
@@ -73,4 +74,8 @@ static inline int ncm_recomm_single(source *s, playentry *p, recomm_option opts)
 static inline int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	// TODO
+}
+
+static inline void ncm_security_handle(source *s)
+{
 }

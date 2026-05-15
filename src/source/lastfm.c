@@ -6,7 +6,7 @@
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
-#include "util.h"
+#include "utils/str.h"
 
 typedef struct lastfm_security {
 	char *profile;
@@ -128,12 +128,13 @@ static inline int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm
 
 	code = curl_easy_perform(curl);
 	if (code != CURLE_OK) {
+		// TODO
 	}
-	/* curl_easy_reset(curl); */
+	curl_easy_reset(curl);
 	return 0;
 }
 
-static void lastfm_security_handle(source *s)
+static inline void lastfm_security_handle(source *s)
 {
 	CURLcode code = CURLE_OK;
 	lastfm_source *ls = (lastfm_source *)s;
