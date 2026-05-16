@@ -1,4 +1,4 @@
-#include "utils/str.h"
+#include "utils/string.h"
 #include "xmalloc.h"
 #include <stdio.h>
 
@@ -13,6 +13,10 @@ int main()
 
 	printf("%s\n", res);
 	xfree(res);
+
+	char* res2 = parseFormat("helo%dtest%s",2026,"ffff");
+	printf("%s\n",res2);
+	xfree(res2);
 
 	return 0;
 }
