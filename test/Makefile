@@ -4,7 +4,7 @@ ROOT_SRC = ../src
 ROOT_LIB = ../lib
 OBJS = $(patsubst ../src/%.c, ../obj/%.o, $(shell find ../src -name "*.c"))
 LIB_OBJS = $(filter-out ../obj/main.o, $(OBJS))
-LIB_DIRS += -L$(ROOT_LIB)/utf8proc -L$(ROOT_LIB)/iniparser -L$(ROOT_LIB)/curl-impersonate
+LIB_DIRS += -L$(ROOT_LIB)/utf8proc -L$(ROOT_LIB)/iniparser -L$(ROOT_LIB)/curl-impersonate -L$(ROOT_LIB)/yyjson/build
 LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,$(ROOT_LIB)/curl-impersonate/
 LD_LIBS = -lcurl-impersonate-chrome -lm
 
@@ -19,6 +19,7 @@ INCLUDES = \
 LIBS = \
 	$(ROOT_LIB)/utf8proc/libutf8proc.a \
 	$(ROOT_LIB)/iniparser/libiniparser.a \
+	$(ROOT_LIB)/yyjson/build/libyyjson.a \
 	$(ROOT_LIB)/libb64/src/libb64.a
 
 TYPE = c

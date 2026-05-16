@@ -15,8 +15,8 @@ C_FLAGS = -g -Wall
 LD = $(CC)
 LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
-LIB_DIRS += -Llib/utf8proc -Llib/iniparser -Llib/curl-impersonate
-LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,lib/curl-impersonate/
+LIB_DIRS += -Llib/utf8proc -Llib/iniparser -Llib/curl-impersonate -Llib/yyjson/build
+LD_FLAGS += $(LIB_DIRS) -Wl,-rpath,lib/curl-impersonate/
 LD_LIBS = -lcurl-impersonate-chrome -lm 
 
 ifeq ($(CC), g++)
@@ -27,10 +27,12 @@ endif
 
 SRCS += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.$(TYPE)}}
 OBJS += $(patsubst $(SRC_DIR)/%.$(TYPE), $(OBJ_DIR)/%.o, $(SRCS))
+jsondir=lib/yyjson
 LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
 	lib/iniparser/libiniparser.$(LIB_TYPE) \
-	lib/libb64/src/libb64.a
+	$(jsondir)/build/libyyjson.$(LIB_TYPE) \
+	lib/libb64/src/libb64.a 
 
 
 vpath %.$(TYPE) $(sort $(dir $(SRCS)))
@@ -52,6 +54,12 @@ lib/iniparser/libiniparser.$(LIB_TYPE):
 lib/libb64/src/libb64.$(LIB_TYPE):
 	@echo "Building lib for libb64..."
 	$(MAKE) -C lib/libb64
+
+$(jsondir)/build/libyyjson.$(LIB_TYPE):
+	@echo "Building lib for yyjson..."
+	mkdir -p $(jsondir)/build
+	$(CMAKE) -S $(jsondir) -B $(jsondir)/build
+	$(MAKE) -C $(jsondir)/build
 
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
@@ -80,6 +88,7 @@ clean : cleanobj
 	make -C lib/iniparser clean
 	make -C lib/utf8proc clean
 	make -C lib/libb64 clean
+	rm -rf $(jsondir)/build
 	make -C test clean
 
 cleanobj :

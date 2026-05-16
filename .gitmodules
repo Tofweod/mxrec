@@ -4,3 +4,6 @@
 [submodule "lib/iniparser"]
 	path = lib/iniparser
 	url = https://github.com/ndevilla/iniparser.git
+[submodule "lib/yyjson"]
+	path = lib/yyjson
+	url = https://github.com/ibireme/yyjson.git
