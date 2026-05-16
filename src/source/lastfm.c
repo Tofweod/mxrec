@@ -46,7 +46,6 @@ FUNCTION_FIELD_LIST
 static source __lastfm_source = {
 	.destroy = lastfm_source_destroy,
 	.rsp = lastfm_recomm_single,
-
 	.rmp = lastfm_recomm_multi,
 	.sh = lastfm_security_handle,
 	.security = &__security,
@@ -98,20 +97,48 @@ LASTFM_DECL
 char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_parameter, ...)
 {
 	va_list paras;
-	char *result, *url, *path = NULL, *parameter = NULL;
+	char *realurl, *base_url,
+		*url = NULL, *path = NULL,
+		*hout = NULL, *parameter = NULL;
 	size_t urlen;
 	int bufstrlen;
+	CURLU *h = NULL;
 
 	config_t *cfg = s->cfg;
-	url = cfg->lastfm_base_url;
+	base_url = cfg->lastfm_base_url;
 	// future: wrapper parseKVFormat with lastfm config map,
 	// in order to automatically parse path
 	path = parseKVFormat(_path,
 			     MAKE_KV("username", (const char *)cfg->lastfm_username), KV_END);
 
 	if (path == NULL) {
-		result = NULL;
+		realurl = NULL;
 		goto cleanup;
+	}
+
+	urlen = strlen(base_url);
+	url = xmalloc(urlen);
+	if (url == NULL) {
+		realurl = NULL;
+		goto cleanup;
+	}
+
+	while (1) {
+		bufstrlen = snprintf(url, urlen, "%s%s", base_url, path);
+		if (bufstrlen < 0) {
+			realurl = NULL;
+			goto cleanup;
+		}
+		if ((size_t)bufstrlen >= urlen) {
+			urlen = ((size_t)bufstrlen) + 1;
+			url = xrealloc(url, urlen);
+			if (url == NULL) {
+				realurl = NULL;
+				goto cleanup;
+			}
+			continue;
+		}
+		break;
 	}
 
 	va_start(paras, _parameter);
@@ -120,41 +147,26 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 	va_end(paras);
 
 	if (_parameter && parameter == NULL) {
-		result = NULL;
+		realurl = NULL;
 		goto cleanup;
 	}
 
-	urlen = strlen(url);
-	result = xmalloc(urlen);
-	if (result == NULL) {
-		result = NULL;
-		goto cleanup;
-	}
-
-	while (1) {
-		if (_parameter) {
-			bufstrlen = snprintf(result, urlen, "%s%s?%s", url, path, parameter);
-		} else {
-			bufstrlen = snprintf(result, urlen, "%s%s", url, path);
-		}
-		if (bufstrlen < 0) {
-			result = NULL;
-			goto cleanup;
-		}
-		if ((size_t)bufstrlen >= urlen) {
-			urlen = ((size_t)bufstrlen) + 1;
-			result = xrealloc(result, urlen);
-			if (result == NULL)
-				goto cleanup;
-			continue;
-		}
-		break;
-	}
+	// esape parameter
+	h = curl_url();
+	curl_url_set(h, CURLUPART_URL, url, 0);
+	curl_url_set(h, CURLUPART_QUERY, parameter, 0);
+	curl_url_get(h, CURLUPART_URL, &hout, 0);
+	realurl = xstrdup(hout);
 
 cleanup:
 	xfree(path);
 	xfree(parameter);
-	return result;
+	xfree(url);
+	if (hout)
+		curl_free(hout);
+	if (h)
+		curl_url_cleanup(h);
+	return realurl;
 }
 
 // write back in curlbuf
@@ -183,7 +195,6 @@ int _lastfm_recomm_single_simple(source *s, playentry *p, recomm_option opts)
 LASTFM_DECL
 void lastfm_source_destroy(void *sp)
 {
-	printf("Calling lastfm destroy\n");
 	// TODO
 	lastfm_source *s = (lastfm_source *)sp;
 	_securityfree(s->src.security);
@@ -210,9 +221,9 @@ LASTFM_DECL
 int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	int ret;
-	long http_code;
 	CURLcode code;
 	curlbuf buf;
+	long http_code = 0;
 	if (opts.level == RECOMM_FULL) {
 		panic("lastfm source don't support full level recommendation");
 	}
@@ -267,9 +278,7 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	}
 	ret = 0;
 
-	fwrite(buf.buf, 1, buf.len, stdout);
-	fflush(stdout);
-
+	// TODO parsing json into playlist
 cleanup:
 	xfree(realurl);
 	if (h)
