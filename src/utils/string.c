@@ -1,7 +1,5 @@
-#include "utils/str.h"
+#include "utils/string.h"
 #include "xmalloc.h"
-#include <stdarg.h>
-#include <string.h>
 
 #define DEFAULT_FORMAT_CAP 8
 
@@ -79,10 +77,6 @@ static const char *kvgetkey(kv_t *kvs, const char *key)
 		++cur;
 	}
 	return NULL;
-}
-
-static char *parsevFormat(const char *fmt, va_list ap)
-{
 }
 
 static int __parseKVFormat(const char *fmt, kv_t *kvs, StrBuffer *sb)
@@ -177,4 +171,11 @@ char *parseFormat(const char *fmt, ...)
 	result = parsevFormat(fmt, ap);
 	va_end(ap);
 	return result;
+}
+
+char *parsevFormat(const char *fmt, va_list ap)
+{
+	char *s;
+	xvasprintf(&s, fmt, ap);
+	return s;
 }

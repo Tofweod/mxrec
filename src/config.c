@@ -1,6 +1,6 @@
 #include "config.h"
 #include "assert.h"
-#include "iniparser/iniparser.h"
+#include "iniparser/src/iniparser.h"
 #include "xmalloc.h"
 #include <linux/limits.h>
 #include <stdlib.h>
@@ -47,6 +47,10 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 
 	// lastfm
 	cfg->lastfm_base_url = xstrdup(iniparser_getstring(d, "lastfm:base-url", NULL));
+	size_t lastfm_base_url_len = strlen(cfg->lastfm_base_url);
+	if (lastfm_base_url_len > 0 && cfg->lastfm_base_url[lastfm_base_url_len - 1] == '/') {
+		cfg->lastfm_base_url[lastfm_base_url_len - 1] = '\0';
+	}
 	cfg->lastfm_username = u8snew(iniparser_getstring(d, "lastfm:username", NULL));
 	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "chrome116"));
 
