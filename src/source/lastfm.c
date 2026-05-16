@@ -1,5 +1,6 @@
 #include "lastfm.h"
 #include "assert.h"
+#include "bb.h"
 #include "config.h"
 #include "curl-impersonate.h"
 #include "monotonic.h"
@@ -11,6 +12,11 @@
 #include <stddef.h>
 
 #define LASTFM_DECL static
+
+#define BUF_DEFAULT_CAP (1024)
+
+// TODO  bufclear will be used in retry-implementation
+BUFFERBUILDER_INIT(LASTFM_DECL, curlbuf, curlbuf, void);
 
 typedef struct lastfm_security {
 	char *profile;
@@ -151,6 +157,17 @@ cleanup:
 	return result;
 }
 
+// write back in curlbuf
+LASTFM_DECL
+size_t lastfm_write_callback(char *ptr, const size_t size, const size_t nmemb, curlbuf *cb)
+{
+	const size_t real = size * nmemb;
+	if (curlbuf_append(cb, ptr, real) < 0)
+		return 0;
+
+	return real;
+}
+
 LASTFM_DECL
 int _lastfm_recomm_single_full(source *s, playentry *p, recomm_option opts)
 {
@@ -193,7 +210,9 @@ LASTFM_DECL
 int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	int ret;
+	long http_code;
 	CURLcode code;
+	curlbuf buf;
 	if (opts.level == RECOMM_FULL) {
 		panic("lastfm source don't support full level recommendation");
 	}
@@ -229,21 +248,33 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 
 	// set headers
 	h = curl_slist_append(h, cfg->lastfm_mrc_accept);
-
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, h);
+
+	// set write callback
+	curlbuf_init(&buf, BUF_DEFAULT_CAP);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfm_write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
 
 	code = curl_easy_perform(curl);
 	if (code != CURLE_OK) {
-		// TODO errors like 404
+		ret = -1;
+		goto cleanup;
+	}
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if (http_code != 200) {
 		ret = -1;
 		goto cleanup;
 	}
 	ret = 0;
 
+	fwrite(buf.buf, 1, buf.len, stdout);
+	fflush(stdout);
+
 cleanup:
 	xfree(realurl);
 	if (h)
 		curl_slist_free_all(h);
+	curlbuf_free(&buf);
 	curl_easy_reset(curl);
 	return ret;
 }

@@ -1,68 +1,45 @@
 #include "utils/string.h"
+#include "bb.h"
 #include "xmalloc.h"
 
 #define DEFAULT_FORMAT_CAP 8
 
 #define ISKVEND(kv) ((kv)->key == NULL)
 
-typedef struct {
-	char *buf;
-	size_t len;
-	size_t cap;
-} StrBuffer;
+BUFFERBUILDER_INIT(static, StrBuffer, _sb, char);
 
 static int sb_init(StrBuffer *sb, size_t cap)
 {
-	sb->cap = cap;
-	sb->len = 0;
-	sb->buf = xmalloc(sb->cap);
-	if (sb->buf == NULL) {
-		memset(sb, 0, sizeof(*sb));
+	if (_sb_init(sb, cap) < 0)
 		return -1;
-	}
 	sb->buf[0] = '\0';
 	return 0;
 }
 
-static int sb_reserve(StrBuffer *sb, size_t need)
+unused static void sb_free(StrBuffer *sb)
 {
-	if (sb->len + need + 1 <= sb->cap)
-		return 0;
+	_sb_free(sb);
+}
 
-	size_t old_cap = sb->cap;
-	assert(sb->len + need + 1 > sb->len);
-	while (sb->len + need + 1 > sb->cap)
-		sb->cap *= 2;
-
-	assert(old_cap <= sb->cap);
-
-	sb->buf = xrealloc(sb->buf, sb->cap);
-
-	if (sb->buf == NULL)
-		return -1;
-
-	return 0;
+unused static void sb_clear(StrBuffer *sb)
+{
+	_sb_clear(sb);
 }
 
 static int sb_append_str(StrBuffer *sb, const char *s)
 {
 	size_t n = strlen(s);
-	if (sb_reserve(sb, n) < 0)
+	if (_sb_append(sb, s, n + 1) < 0)
 		return -1;
-
-	memcpy(sb->buf + sb->len, s, n);
-
-	sb->len += n;
-	sb->buf[sb->len] = '\0';
+	// null terminal
+	sb->buf[--(sb->len)] = '\0';
 	return 0;
 }
 
 static int sb_append_char(StrBuffer *sb, int ch)
 {
-	if (sb_reserve(sb, 1) < 0)
+	if (_sb_append(sb, &ch, 1) < 0)
 		return -1;
-
-	sb->buf[sb->len++] = ch;
 	sb->buf[sb->len] = '\0';
 	return 0;
 }
