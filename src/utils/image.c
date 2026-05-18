@@ -201,9 +201,6 @@ char *b64decode(const char *b64rawdata, size_t *outlen)
 	size_t max_outlen = inlen / 4 * 3 + inlen % 4;
 	char *output = xmalloc(max_outlen + 1);
 
-	if (!output)
-		return NULL;
-
 	size_t written = base64_decode_block(b64rawdata, inlen,
 					     output, &state);
 

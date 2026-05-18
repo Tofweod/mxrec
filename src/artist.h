@@ -13,5 +13,6 @@ typedef struct artist {
 
 void *artist_new(void);
 void artist_free(artist *ar);
+int aritst_add_alia(artist **ar_ref,const char* alia);
 
 #endif

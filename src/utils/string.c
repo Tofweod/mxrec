@@ -9,12 +9,10 @@
 
 BUFFERBUILDER_INIT(static, StrBuffer, _sb, char);
 
-static int sb_init(StrBuffer *sb, size_t cap)
+static void sb_init(StrBuffer *sb, size_t cap)
 {
-	if (_sb_init(sb, cap) < 0)
-		return -1;
+	_sb_init(sb, cap);
 	sb->buf[0] = '\0';
-	return 0;
 }
 
 mxrec_unused static void sb_free(StrBuffer *sb)
@@ -27,22 +25,18 @@ mxrec_unused static void sb_clear(StrBuffer *sb)
 	_sb_clear(sb);
 }
 
-static int sb_append_str(StrBuffer *sb, const char *s)
+static void sb_append_str(StrBuffer *sb, const char *s)
 {
 	size_t n = strlen(s);
-	if (_sb_append(sb, s, n + 1) < 0)
-		return -1;
+	_sb_append(sb, s, n + 1);
 	// null terminal
 	sb->buf[--(sb->len)] = '\0';
-	return 0;
 }
 
-static int sb_append_char(StrBuffer *sb, int ch)
+static void sb_append_char(StrBuffer *sb, int ch)
 {
-	if (_sb_append(sb, &ch, 1) < 0)
-		return -1;
+	_sb_append(sb, &ch, 1);
 	sb->buf[sb->len] = '\0';
-	return 0;
 }
 
 static const char *kvgetkey(kv_t *kvs, const char *key)
@@ -75,14 +69,11 @@ static int __parseKVFormat(const char *fmt, kv_t *kvs, StrBuffer *sb)
 
 			const char *val = kvgetkey(kvs, key);
 			if (val)
-				if (sb_append_str(sb, val) < 0)
-					return -1;
-
+				sb_append_str(sb, val);
 			if (*p == '}')
 				++p;
 		} else {
-			if (sb_append_char(sb, *p) < 0)
-				return -1;
+			sb_append_char(sb, *p);
 			p++;
 		}
 	}
@@ -100,8 +91,6 @@ char *parseKVFormat(const char *fmt, ...)
 	va_start(args, fmt);
 
 	pairs = xmalloc(sizeof(kv_t) * cap);
-	if (pairs == NULL)
-		return NULL;
 
 	while (1) {
 		kv_t kv = va_arg(args, kv_t);
@@ -111,10 +100,7 @@ char *parseKVFormat(const char *fmt, ...)
 
 		if (n >= cap) {
 			cap *= 2;
-
 			pairs = xrealloc(pairs, sizeof(kv_t) * cap);
-			if (pairs == NULL)
-				return NULL;
 		}
 
 		pairs[n++] = kv;
@@ -124,8 +110,7 @@ char *parseKVFormat(const char *fmt, ...)
 
 	pairs[n] = KV_END;
 
-	if (sb_init(&sb, strlen(fmt)) < 0)
-		mxrec_cleanup(cleanup, ret, 0);
+	sb_init(&sb, strlen(fmt));
 
 	if (__parseKVFormat(fmt, pairs, &sb) < 0)
 		mxrec_cleanup(cleanup, ret, 0);

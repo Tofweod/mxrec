@@ -19,4 +19,7 @@ typedef struct track {
 void *track_new(void);
 void track_free(track *tr);
 
+int track_add_alia(track **tr_ref, const char *alia);
+int track_add_artist(track *tr, artist *ar);
+
 #endif

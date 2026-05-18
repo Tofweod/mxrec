@@ -85,8 +85,6 @@ int lastfm_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfm_source));
-	if (s == NULL)
-		return -1;
 	if (lastfm_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
@@ -118,8 +116,6 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 
 	urlen = strlen(base_url);
 	url = xmalloc(urlen);
-	if (url == NULL)
-		mxrec_cleanup(cleanup, realurl, NULL);
 
 	while (1) {
 		bufstrlen = snprintf(url, urlen, "%s%s", base_url, path);
@@ -129,8 +125,6 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 		if ((size_t)bufstrlen >= urlen) {
 			urlen = ((size_t)bufstrlen) + 1;
 			url = xrealloc(url, urlen);
-			if (url == NULL)
-				mxrec_cleanup(cleanup, realurl, NULL);
 			continue;
 		}
 		break;
@@ -195,8 +189,7 @@ LASTFM_DECL
 size_t lastfm_write_callback(char *ptr, const size_t size, const size_t nmemb, curlbuf *cb)
 {
 	const size_t real = size * nmemb;
-	if (curlbuf_append(cb, ptr, real) < 0)
-		return 0;
+	curlbuf_append(cb, ptr, real);
 
 	return real;
 }

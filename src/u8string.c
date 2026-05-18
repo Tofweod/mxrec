@@ -122,9 +122,6 @@ static inline u8s _u8snewlen(const void *init, size_t len)
 	assert(bufsize > reallen);
 	buf = xmalloc(bufsize);
 
-	if (unlikely(buf == NULL))
-		mxrec_cleanup(cleanup, ret, 0);
-
 	ret = u8snewplacement(buf, bufsize, s, reallen, default_norm_type);
 
 cleanup:
@@ -200,8 +197,6 @@ static inline u8s _u8sExpand(u8s s, size_t addlen)
 	assert(newlen > len);
 
 	newh = xrealloc(h, hdrlen + newlen + 1);
-	if (unlikely(newh == NULL))
-		return NULL;
 	s = (u8s)newh + hdrlen;
 	u8s_set(s, alloc, newlen);
 	return s;
@@ -419,13 +414,10 @@ u8s u8scatvprintf(u8s s, const char *fmt, va_list ap)
 	size_t buflen = strlen(fmt) * 2;
 	int bufstrlen;
 
-	if (buflen > sizeof(staticbuf)) {
+	if (buflen > sizeof(staticbuf))
 		buf = xmalloc(buflen);
-		if (buf == NULL)
-			return NULL;
-	} else {
+	else
 		buflen = sizeof(staticbuf);
-	}
 
 	while (1) {
 		va_copy(cp, ap);
@@ -442,8 +434,6 @@ u8s u8scatvprintf(u8s s, const char *fmt, va_list ap)
 				xfree(buf);
 			buflen = ((size_t)bufstrlen) + 1;
 			buf = xmalloc(buflen);
-			if (buf == NULL)
-				return NULL;
 			continue;
 		}
 		break;
@@ -582,11 +572,6 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result)
 	bufsize = dstlen + U8S_HDRSIZE + 1;
 
 	buf = xmalloc(bufsize);
-
-	if (unlikely(buf == NULL)) {
-		u8s_set_result(result, U8S_ERR_OOM);
-		mxrec_cleanup(cleanup, ret, 0);
-	}
 
 	ret = u8snewplacement(buf, bufsize, dst, dstlen, u8soption2normtype(opts));
 

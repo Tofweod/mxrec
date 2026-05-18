@@ -48,8 +48,6 @@ int ncm_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct ncm_source));
-	if (s == NULL)
-		return -1;
 	if (ncm_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

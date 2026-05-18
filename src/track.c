@@ -16,8 +16,6 @@ static dumpType trackDumpType = {
 void *track_new(void)
 {
 	track *tr = xmalloc(sizeof(track));
-	if (tr == NULL)
-		return NULL;
 
 	memset(tr, 0, sizeof(*tr));
 	tr->dt = &trackDumpType;
