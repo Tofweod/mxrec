@@ -66,7 +66,7 @@ static inline void ncm_source_destroy(void *sp)
 	xfree(s->cookie);
 }
 
-static inline int ncm_recomm_single(source *s, playentry *p, recomm_option opts)
+static inline int ncm_recomm_single(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
 }

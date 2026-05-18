@@ -230,7 +230,7 @@ int b64writeQR(const char *b64data, const char *outfile, int margin, int use_ans
 		rwidth = __get_resize_width(width);
 		ret = __resize_img_rawdata(&resizedata, imgrawdata, width, rwidth);
 		if (ret < 0)
-			goto cleanup;
+			mxrec_cleanup(cleanup, ret, ret);
 		ret = __writeQRUTF8(resizedata, rwidth, margin, outfile, use_ansi, invert);
 	} else {
 		resizedata = NULL;

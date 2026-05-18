@@ -1,6 +1,7 @@
 #ifndef TOF_MXREC_SOURCE_H
 #define TOF_MXREC_SOURCE_H
 
+#include "comm.h"
 #include "playlist.h"
 #include "xmalloc.h"
 #include <stdbool.h>
@@ -39,7 +40,7 @@ typedef void (*source_destroy)(void *sp);
  * store recomm result in pointer p.
  * return 0 on success, else return a negative number when error.
  */
-typedef int (*recomm_single_fp)(source *s, playentry *p, recomm_option opts);
+typedef int (*recomm_single_fp)(source *s, playitem *p, recomm_option opts);
 /**
  * recomm lists of tracks with 'num' and store the result in pointer p.
  * return the real number of array p, else return a negative when error.
@@ -47,6 +48,10 @@ typedef int (*recomm_single_fp)(source *s, playentry *p, recomm_option opts);
 typedef int (*recomm_multi_fp)(source *s, size_t num, playlist *p, recomm_option opts);
 
 typedef void (*security_handle)(source *s);
+
+// TODO parameter optimization
+typedef int (*before_recomm)(source *s, void *userdata);
+typedef int (*after_recomm)(source *s, void *userdata);
 
 typedef struct source {
 	source_destroy destroy;
@@ -61,19 +66,56 @@ typedef struct source {
 	/// this module is used for bypass such limitations.
 	void *security;
 
+	before_recomm br;
+	after_recomm ar;
+
 	void *userdata;
 } source;
 
-static inline int _recomm_single(void *sp, playentry *p, recomm_option opts)
+static inline void source_clearuserdata(source *s);
+
+static inline int source_before_recomm(source *s, void *userdata)
 {
+	return s->br ? s->br(s, userdata) : 0;
+}
+
+static inline int source_after_recomm(source *s, void *userdata)
+{
+	return s->ar ? s->ar(s, userdata) : 0;
+}
+
+static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
+{
+	int ret;
 	source *s = (source *)sp;
-	return s->rsp(s, p, opts);
+	if (source_before_recomm(s, s->userdata) < 0) {
+		return -1;
+	}
+	source_clearuserdata(s);
+	ret = s->rsp(s, p, opts);
+	if (ret < 0)
+		mxrec_cleanup(rs_cleanup, ret, ret);
+	ret = source_after_recomm(s, s->userdata);
+rs_cleanup:
+	source_clearuserdata(s);
+	return ret;
 }
 
 static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option opts)
 {
+	int ret;
 	source *s = (source *)sp;
-	return s->rmp(s, num, p, opts);
+	if (source_before_recomm(s, s->userdata) < 0) {
+		return -1;
+	}
+	source_clearuserdata(s);
+	ret = s->rmp(s, num, p, opts);
+	if (ret < 0)
+		mxrec_cleanup(rm_cleanup, ret, ret);
+	ret = source_after_recomm(s, s->userdata);
+rm_cleanup:
+	source_clearuserdata(s);
+	return ret;
 }
 
 static inline void source_free(source *s)
@@ -85,6 +127,11 @@ static inline void source_free(source *s)
 static inline void source_setuserdata(source *s, void *data)
 {
 	s->userdata = data;
+}
+
+static inline void source_clearuserdata(source *s)
+{
+	s->userdata = NULL;
 }
 
 static inline void perform_security(void *sp)

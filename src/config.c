@@ -25,7 +25,6 @@ static int config_check(config_t *cfg)
 	cfg_check(lastfm_base_url);
 	cfg_check(lastfm_username);
 	cfg_check(lastfm_mrc_path);
-	cfg_check(lastfm_mrc_parameter);
 
 	return ret;
 }

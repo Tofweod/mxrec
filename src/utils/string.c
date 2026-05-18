@@ -1,5 +1,6 @@
 #include "utils/string.h"
 #include "bb.h"
+#include "comm.h"
 #include "xmalloc.h"
 
 #define DEFAULT_FORMAT_CAP 8
@@ -16,12 +17,12 @@ static int sb_init(StrBuffer *sb, size_t cap)
 	return 0;
 }
 
-unused static void sb_free(StrBuffer *sb)
+mxrec_unused static void sb_free(StrBuffer *sb)
 {
 	_sb_free(sb);
 }
 
-unused static void sb_clear(StrBuffer *sb)
+mxrec_unused static void sb_clear(StrBuffer *sb)
 {
 	_sb_clear(sb);
 }
@@ -123,15 +124,11 @@ char *parseKVFormat(const char *fmt, ...)
 
 	pairs[n] = KV_END;
 
-	if (sb_init(&sb, strlen(fmt)) < 0) {
-		ret = NULL;
-		goto cleanup;
-	}
+	if (sb_init(&sb, strlen(fmt)) < 0)
+		mxrec_cleanup(cleanup, ret, 0);
 
-	if (__parseKVFormat(fmt, pairs, &sb) < 0) {
-		ret = NULL;
-		goto cleanup;
-	}
+	if (__parseKVFormat(fmt, pairs, &sb) < 0)
+		mxrec_cleanup(cleanup, ret, 0);
 
 	ret = sb.buf;
 cleanup:

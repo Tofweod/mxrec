@@ -11,7 +11,7 @@ extern u8s_norm_t default_norm_type;
 u8s_norm_t default_norm_type = U8S_NFKC;
 
 // u8shdr
-struct packed u8shdr {
+struct mxrec_packed u8shdr {
 	// byte len of u8s
 	size_t len;
 	// alloced bytes of current string
@@ -115,19 +115,15 @@ static inline u8s _u8snewlen(const void *init, size_t len)
 	reallen = utf8proc_map(init, len, &s,
 			       (utf8proc_option_t)u8snormtype2option(default_norm_type));
 
-	if (reallen < 0) {
-		ret = NULL;
-		goto cleanup;
-	}
+	if (reallen < 0)
+		mxrec_cleanup(cleanup, ret, 0);
 
 	bufsize = reallen + hdrlen + 1;
 	assert(bufsize > reallen);
 	buf = xmalloc(bufsize);
 
-	if (unlikely(buf == NULL)) {
-		ret = NULL;
-		goto cleanup;
-	}
+	if (unlikely(buf == NULL))
+		mxrec_cleanup(cleanup, ret, 0);
 
 	ret = u8snewplacement(buf, bufsize, s, reallen, default_norm_type);
 
@@ -579,9 +575,8 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result)
 	dstlen = utf8proc_map(src, srclen, &dst, (utf8proc_option_t)opts);
 
 	if (dstlen < 0) {
-		ret = NULL;
 		u8s_set_result(result, U8S_ERR_NORM);
-		goto cleanup;
+		mxrec_cleanup(cleanup, ret, 0);
 	}
 
 	bufsize = dstlen + U8S_HDRSIZE + 1;
@@ -589,9 +584,8 @@ u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result)
 	buf = xmalloc(bufsize);
 
 	if (unlikely(buf == NULL)) {
-		ret = NULL;
 		u8s_set_result(result, U8S_ERR_OOM);
-		goto cleanup;
+		mxrec_cleanup(cleanup, ret, 0);
 	}
 
 	ret = u8snewplacement(buf, bufsize, dst, dstlen, u8soption2normtype(opts));

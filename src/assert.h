@@ -12,7 +12,7 @@
 #define error(...) _Error(__FILE__, __LINE__, __VA_ARGS__)
 
 void _Assert(const char *e, const char *file, int line);
-noreturn void _Panic(const char *file, int line, const char *msg, ...);
+mxrec_noreturn void _Panic(const char *file, int line, const char *msg, ...);
 void _Error(const char *file, int line, const char *msg, ...);
 
 #endif

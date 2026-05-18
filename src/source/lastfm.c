@@ -1,6 +1,7 @@
 #include "lastfm.h"
 #include "assert.h"
 #include "bb.h"
+#include "comm.h"
 #include "config.h"
 #include "curl-impersonate.h"
 #include "monotonic.h"
@@ -9,6 +10,7 @@
 #include "source/comm-source.h"
 #include "utils/string.h"
 #include "xmalloc.h"
+#include "yyjson/src/yyjson.h"
 #include <stddef.h>
 
 #define LASTFM_DECL static
@@ -111,31 +113,24 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 	path = parseKVFormat(_path,
 			     MAKE_KV("username", (const char *)cfg->lastfm_username), KV_END);
 
-	if (path == NULL) {
-		realurl = NULL;
-		goto cleanup;
-	}
+	if (path == NULL)
+		mxrec_cleanup(cleanup, realurl, NULL);
 
 	urlen = strlen(base_url);
 	url = xmalloc(urlen);
-	if (url == NULL) {
-		realurl = NULL;
-		goto cleanup;
-	}
+	if (url == NULL)
+		mxrec_cleanup(cleanup, realurl, NULL);
 
 	while (1) {
 		bufstrlen = snprintf(url, urlen, "%s%s", base_url, path);
-		if (bufstrlen < 0) {
-			realurl = NULL;
-			goto cleanup;
-		}
+		if (bufstrlen < 0)
+			mxrec_cleanup(cleanup, realurl, NULL);
+
 		if ((size_t)bufstrlen >= urlen) {
 			urlen = ((size_t)bufstrlen) + 1;
 			url = xrealloc(url, urlen);
-			if (url == NULL) {
-				realurl = NULL;
-				goto cleanup;
-			}
+			if (url == NULL)
+				mxrec_cleanup(cleanup, realurl, NULL);
 			continue;
 		}
 		break;
@@ -146,10 +141,8 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 		parameter = parsevFormat(_parameter, paras);
 	va_end(paras);
 
-	if (_parameter && parameter == NULL) {
-		realurl = NULL;
-		goto cleanup;
-	}
+	if (_parameter && parameter == NULL)
+		mxrec_cleanup(cleanup, realurl, NULL);
 
 	// esape parameter
 	h = curl_url();
@@ -160,13 +153,41 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 
 cleanup:
 	xfree(path);
-	xfree(parameter);
 	xfree(url);
+	xfree(parameter);
 	if (hout)
 		curl_free(hout);
 	if (h)
 		curl_url_cleanup(h);
 	return realurl;
+}
+
+// json parser
+LASTFM_DECL
+int lastfm_json2playlist(curlbuf *buf, size_t wanted, playlist *p)
+{
+	int ret;
+	size_t plen;
+	yyjson_doc *doc;
+	yyjson_val *root;
+	yyjson_val *pls;
+
+	doc = yyjson_read(buf->buf, buf->len, 0);
+
+	if (doc == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+
+	root = yyjson_doc_get_root(doc);
+	pls = yyjson_obj_get(root, "playlist");
+	if (!yyjson_is_arr(pls))
+		mxrec_cleanup(cleanup, ret, -1);
+
+	plen = yyjson_arr_size(pls);
+
+	ret = 0;
+cleanup:
+	yyjson_doc_free(doc);
+	return ret;
 }
 
 // write back in curlbuf
@@ -181,13 +202,13 @@ size_t lastfm_write_callback(char *ptr, const size_t size, const size_t nmemb, c
 }
 
 LASTFM_DECL
-int _lastfm_recomm_single_full(source *s, playentry *p, recomm_option opts)
+int _lastfm_recomm_single_full(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
 }
 
 LASTFM_DECL
-int _lastfm_recomm_single_simple(source *s, playentry *p, recomm_option opts)
+int _lastfm_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
 }
@@ -203,7 +224,7 @@ void lastfm_source_destroy(void *sp)
 
 // interface implement
 LASTFM_DECL
-int lastfm_recomm_single(source *s, playentry *p, recomm_option opts)
+int lastfm_recomm_single(source *s, playitem *p, recomm_option opts)
 {
 	printf("Calling lastfm recomm_single\n");
 	if (opts.use_security)
@@ -217,6 +238,12 @@ int lastfm_recomm_single(source *s, playentry *p, recomm_option opts)
 		return -1;
 }
 
+/**
+ * Fuck lastfm, the size of playlist captured from http request is not fixed.
+ * So here if assigned `num` is smaller than playlist size it works normally,
+ * else return playlist size.
+ * Doing multi calls to meet `num` value is fucking silly.
+ */
 LASTFM_DECL
 int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
@@ -244,10 +271,9 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	char *realurl = lastfm_parse_url(ls,
 					 cfg->lastfm_mrc_path,
 					 cfg->lastfm_mrc_parameter, num);
-	if (realurl == NULL) {
-		ret = -1;
-		goto cleanup;
-	}
+	if (realurl == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+
 	curl_easy_setopt(curl, CURLOPT_URL, realurl);
 
 	// set method
@@ -267,18 +293,19 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
 
 	code = curl_easy_perform(curl);
-	if (code != CURLE_OK) {
-		ret = -1;
-		goto cleanup;
-	}
+	if (code != CURLE_OK)
+		mxrec_cleanup(cleanup, ret, -1);
+
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-	if (http_code != 200) {
-		ret = -1;
-		goto cleanup;
-	}
+	if (http_code != 200)
+		mxrec_cleanup(cleanup, ret, -1);
+
 	ret = 0;
 
 	// TODO parsing json into playlist
+	if (lastfm_json2playlist(&buf, num, p) < 0)
+		mxrec_cleanup(cleanup, ret, -1);
+
 cleanup:
 	xfree(realurl);
 	if (h)

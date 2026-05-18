@@ -12,13 +12,13 @@ static inline void _printflevel(const char *level, const char *msg)
 	fprintf(stderr, "[%s]: %s\n", level, msg);
 }
 
-noinline void _Assert(const char *estr, const char *file, int line)
+mxrec_noinline void _Assert(const char *estr, const char *file, int line)
 {
 	snprintf(log_buf, sizeof(log_buf), "%s failed in %s:%d", estr, file, line);
 	_printflevel("Assert", log_buf);
 }
 
-noreturn noinline void _Panic(const char *file, int line, const char *msg, ...)
+mxrec_noreturn mxrec_noinline void _Panic(const char *file, int line, const char *msg, ...)
 {
 	static char buf[MAX_LOG_SIZE / 2];
 	va_list ap;
@@ -30,7 +30,7 @@ noreturn noinline void _Panic(const char *file, int line, const char *msg, ...)
 	abort();
 }
 
-noinline void _Error(const char *file, int line, const char *msg, ...)
+mxrec_noinline void _Error(const char *file, int line, const char *msg, ...)
 {
 	static char buf[MAX_LOG_SIZE / 2];
 	va_list ap;

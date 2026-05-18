@@ -19,14 +19,20 @@
 #endif
 
 #ifdef __GNUC__
-#define unused __attribute__((__unused__))
-#define noinline __attribute__((noinline))
-#define packed __attribute__((__packed__))
-#define noreturn __attribute__((__noreturn__))
+#define mxrec_unused __attribute__((__unused__))
+#define mxrec_noinline __attribute__((noinline))
+#define mxrec_packed __attribute__((__packed__))
+#define mxrec_noreturn __attribute__((__noreturn__))
 #elif
-#define unused
-#define noinline
-#define packed
+#define mxrec_unused
+#define mxrec_noinline
+#define mxrec_packed
 #endif
+
+#define mxrec_cleanup(tag, ret, val) \
+	do {                         \
+		(ret) = (val);       \
+		goto tag;            \
+	} while (0)
 
 #endif
