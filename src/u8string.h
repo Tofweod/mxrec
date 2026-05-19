@@ -114,7 +114,7 @@ u8s u8sexpandzero(u8s s, size_t len);
 /**
  * u8s operated such as cat, cpy will simply use memory operations in stdlib.h
  * And it just change raw data without normalization.
- * Thus the type field of is no longer valid and the valid_type filed is set to 0,
+ * Thus the type field of is no longer valid and the valid_type field is set to 0,
  * until explicit calling `u8snormalize`.
  * Return NULL on error.
  */

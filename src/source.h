@@ -29,10 +29,11 @@ typedef struct recomm_option {
 		RECOMM_FULL = 1,
 	} level;
 
+	bool strict;
 	bool use_security;
 } recomm_option;
 
-// function filed
+// function field
 
 // remove relative resources here, release the memory by `source_free`
 typedef void (*source_destroy)(void *sp);
@@ -76,12 +77,22 @@ static inline void source_clearuserdata(source *s);
 
 static inline int source_before_recomm(source *s, void *userdata)
 {
-	return s->br ? s->br(s, userdata) : 0;
+	int ret = 0;
+	if (s->br) {
+		ret = s->br(s, userdata);
+		source_clearuserdata(s);
+	}
+	return ret;
 }
 
 static inline int source_after_recomm(source *s, void *userdata)
 {
-	return s->ar ? s->ar(s, userdata) : 0;
+	int ret = 0;
+	if (s->ar) {
+		ret = s->ar(s, userdata);
+		source_clearuserdata(userdata);
+	}
+	return ret;
 }
 
 static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
@@ -91,31 +102,27 @@ static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
 	if (source_before_recomm(s, s->userdata) < 0) {
 		return -1;
 	}
-	source_clearuserdata(s);
 	ret = s->rsp(s, p, opts);
 	if (ret < 0)
 		mxrec_cleanup(rs_cleanup, ret, ret);
 	ret = source_after_recomm(s, s->userdata);
 rs_cleanup:
-	source_clearuserdata(s);
 	return ret;
 }
 
 static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option opts)
 {
-	int ret;
+	int ret, handled;
 	source *s = (source *)sp;
 	if (source_before_recomm(s, s->userdata) < 0) {
 		return -1;
 	}
-	source_clearuserdata(s);
-	ret = s->rmp(s, num, p, opts);
-	if (ret < 0)
-		mxrec_cleanup(rm_cleanup, ret, ret);
+	handled = s->rmp(s, num, p, opts);
+	if (handled < 0)
+		mxrec_cleanup(rm_cleanup, ret, handled);
 	ret = source_after_recomm(s, s->userdata);
 rm_cleanup:
-	source_clearuserdata(s);
-	return ret;
+	return !ret ? handled : ret;
 }
 
 static inline void source_free(source *s)

@@ -1,16 +1,30 @@
 #include "artist.h"
+#include "assert.h"
 #include "xmalloc.h"
+#include <string.h>
+
+static void artist_dump2json(void *ar)
+{
+	// TODO
+}
 
 static dumpType artistDumpType = {
-	// TODO
-
+	.dump2json = artist_dump2json,
 };
 
-void *artist_new(void)
+artist *artist_new(const char *name, unsigned int alia_size, const char *alias[])
 {
-	artist *ar = xmalloc(sizeof(artist));
-	ar->alia_size = 0;
+	unsigned int i;
+	artist *ar = xmalloc(sizeof(artist) + sizeof(u8s) * alia_size);
+	memset(ar,0,sizeof(*ar));
+	ar->name = u8snew(name);
 	ar->dt = &artistDumpType;
+
+	assert((alia_size > 0 && alias) || (!alia_size && !alias));
+	for (i = 0; i < alia_size; ++i) {
+		ar->alias[i] = u8snew(alias[i]);
+	}
+	ar->alia_size = alia_size;
 	return ar;
 }
 
@@ -18,19 +32,8 @@ void artist_free(artist *ar)
 {
 	if (ar == NULL)
 		return;
-	xfree(ar->name);
-	xfree(ar);
+	u8sfree(ar->name);
 	for (unsigned int i = 0; i < ar->alia_size; ++i)
 		u8sfree(ar->alias[i]);
-}
-
-int aritst_add_alia(artist **ar_ref, const char *alia)
-{
-	artist *ar = *ar_ref;
-
-	// TODO realloc
-
-	*ar_ref = ar;
-	ar->alias[ar->alia_size++] = u8snew(alia);
-	return 0;
+	xfree(ar);
 }

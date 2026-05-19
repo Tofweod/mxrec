@@ -9,7 +9,7 @@ LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,$(ROOT_LIB)/curl-impersonate/
 LD_LIBS = -lcurl-impersonate-chrome -lm
 
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -g3 -Wall
 
 INCLUDES = \
 	-I$(ROOT_SRC) \
@@ -40,6 +40,10 @@ util-string: util-string.c $(LIB_OBJS)
 	@echo "Built $@"
 
 b64-qr: b64-qr.c $(LIB_OBJS)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
+	@echo "Built $@"
+
+da-test: da-test.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"
 

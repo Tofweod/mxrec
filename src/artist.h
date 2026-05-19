@@ -11,8 +11,10 @@ typedef struct artist {
 	u8s alias[];
 } artist;
 
-void *artist_new(void);
+/**
+ * artist will take the control of field's lifetime
+ */
+artist *artist_new(const char *name, unsigned int alia_size, const char *alias[]);
 void artist_free(artist *ar);
-int aritst_add_alia(artist **ar_ref,const char* alia);
 
 #endif

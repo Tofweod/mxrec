@@ -16,10 +16,12 @@ typedef struct track {
 	u8s alias[];
 } track;
 
-void *track_new(void);
+/**
+ * track will take the control of field's lifetime
+ */
+void *track_new(const char *title, const char *album,
+		unsigned int ar_size, artist **ars,
+		unsigned int alia_size, const char *alias[]);
 void track_free(track *tr);
-
-int track_add_alia(track **tr_ref, const char *alia);
-int track_add_artist(track *tr, artist *ar);
 
 #endif

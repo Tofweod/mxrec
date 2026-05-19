@@ -4,20 +4,24 @@
 #include "dump.h"
 typedef struct track track;
 
+#define MAX_URL_SIZE 512
+
 typedef struct playitem {
 	dumpType *dt;
 	track *tr;
-	char *urls[];
+	unsigned int url_size;
+	unsigned int url_alloc;
+	char **urls;
 } playitem;
 
 // dynamic array using da.h
 typedef playitem *playlist;
 
-void *playitem_new(track *tr);
-int playitem_addurl(playitem **pi_ref, const char *url);
+void playitem_init(playitem *pi);
+int playitem_addurl(playitem *pi, const char *url);
 void playitem_free(playitem *pi);
 
-void dumpPlaylist(playlist *pl);
-void playlist_free(playlist *pl);
+void dumpPlaylist(const playlist pl);
+void playlist_free(playlist pl);
 
 #endif

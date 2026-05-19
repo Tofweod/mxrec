@@ -16,6 +16,7 @@ mxrec_noinline void _Assert(const char *estr, const char *file, int line)
 {
 	snprintf(log_buf, sizeof(log_buf), "%s failed in %s:%d", estr, file, line);
 	_printflevel("Assert", log_buf);
+	abort();
 }
 
 mxrec_noreturn mxrec_noinline void _Panic(const char *file, int line, const char *msg, ...)
