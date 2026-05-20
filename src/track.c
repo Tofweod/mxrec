@@ -51,6 +51,5 @@ void track_free(track *tr)
 
 	for (i = 0; i < tr->alia_size; ++i)
 		u8sfree(tr->alias[i]);
-
 	xfree(tr);
 }

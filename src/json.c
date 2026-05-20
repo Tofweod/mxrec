@@ -11,3 +11,12 @@ void write_jsonerr(void *err, const char *fmt, ...)
 				   fmt, args);
 	va_end(args);
 }
+
+void print_jsonerr(void *err)
+{
+	struct json_err *error = (struct json_err *)err;
+	if (error->length == 0)
+		return;
+	fprintf(stderr, "Error in parsing json: %s",
+		error->msg);
+}

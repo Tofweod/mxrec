@@ -22,9 +22,12 @@ static int config_check(config_t *cfg)
 		}                                              \
 	while (0)
 
+	// TODO
 	cfg_check(lastfm_base_url);
 	cfg_check(lastfm_username);
-	cfg_check(lastfm_mrc_path);
+	cfg_check(lastfmweb_recomm_path);
+
+	cfg_check(ncm_cookie);
 
 	return ret;
 }
@@ -50,15 +53,22 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	if (lastfm_base_url_len > 0 && cfg->lastfm_base_url[lastfm_base_url_len - 1] == '/') {
 		cfg->lastfm_base_url[lastfm_base_url_len - 1] = '\0';
 	}
+	cfg->lastfm_method = xstrdup(iniparser_getstring(d,"lastfm.method",NULL));
+	cfg->lastfm_api_key = xstrdup(iniparser_getstring(d,"lastfm.api-key",NULL));
 	cfg->lastfm_username = u8snew(iniparser_getstring(d, "lastfm:username", NULL));
 	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "chrome116"));
 
 	// lastfm multi_recomm
-	cfg->lastfm_mrc_path = xstrdup(iniparser_getstring(d, "lastfm.multi-recomm:path", NULL));
-	cfg->lastfm_mrc_method = xstrdup(iniparser_getstring(d, "lastfm.multi-recomm:method", "GET"));
-	cfg->lastfm_mrc_parameter = xstrdup(iniparser_getstring(d, "lastfm.multi-recomm:parameter", NULL));
-	cfg->lastfm_mrc_accept = xstrdup(iniparser_getstring(d, "lastfm.multi-recomm:accept", NULL));
-	cfg->lastfm_mrc_auth = iniparser_getboolean(d, "lastfm.multi-recomm:auth", false);
+	cfg->lastfmweb_recomm_path = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-path", NULL));
+	cfg->lastfmweb_recomm_method = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-method", "GET"));
+	cfg->lastfmweb_recomm_parameter = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-parameter", NULL));
+	cfg->lastfmweb_recomm_accept = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-accept", NULL));
+
+	// ncm
+	cfg->ncm_cookie = xstrdup(iniparser_getstring(d, "ncm:cookie", NULL));
+	cfg->ncm_bind_method = xstrdup(iniparser_getstring(d, "ncm:bind-method", "http"));
+	cfg->ncm_bind_address = xstrdup(iniparser_getstring(d, "ncm:bind-address", "127.0.0.1"));
+	cfg->ncm_port = iniparser_getuint64(d, "ncm:port", 9900);
 
 	iniparser_freedict(d);
 

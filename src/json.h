@@ -10,4 +10,6 @@ struct json_err {
 
 void write_jsonerr(void *err, const char *fmt,...);
 
+void print_jsonerr(void *err);
+
 #endif

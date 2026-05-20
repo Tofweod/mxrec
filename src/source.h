@@ -22,7 +22,9 @@ typedef struct source source;
 
 typedef struct recomm_option {
 	/**
-	 *
+	 * Only support simple now. For most sources with return imcompleted
+	 * results for speed, FULL level requires multi-time queries
+	 * which may be implemented in the future.
 	 */
 	enum recomm_level {
 		RECOMM_SIMPLE = 0,

@@ -31,7 +31,7 @@ u8s-basic: u8s-basic.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"
 
-lastfm-source: lastfm-source.c $(LIB_OBJS)
+lastfm-web-source: lastfm-web-source.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"
 

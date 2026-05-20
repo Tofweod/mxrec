@@ -1,4 +1,4 @@
-#include "lastfm.h"
+#include "lastfm-web.h"
 #include "artist.h"
 #include "assert.h"
 #include "bb.h"
@@ -17,59 +17,64 @@
 #include "yyjson/src/yyjson.h"
 #include <stddef.h>
 
-#define LASTFM_DECL static
+#define LASTFMWEB_DECL static
 
 #define BUF_DEFAULT_CAP (1024)
 
 // TODO  bufclear will be used in retry-implementation
-BUFFERBUILDER_INIT(LASTFM_DECL, curlbuf, curlbuf, void);
+BUFFERBUILDER_INIT(LASTFMWEB_DECL, curlbuf, curlbuf, void);
 
-typedef struct lastfm_security {
+typedef struct lastfmweb_security {
 	char *profile;
-} lastfm_security;
+} lastfmweb_security;
 
-LASTFM_DECL
-int _securityinit(lastfm_security *security, config_t *cfg)
+LASTFMWEB_DECL
+int _securityinit(lastfmweb_security *security, config_t *cfg)
 {
 	security->profile = xstrdup(cfg->lastfm_security_profile);
 	return 0;
 }
 
-LASTFM_DECL
-void _securityfree(lastfm_security *security)
+LASTFMWEB_DECL
+void _securityfree(lastfmweb_security *security)
 {
 	xfree(security->profile);
 }
 
-static lastfm_security __security;
+static lastfmweb_security __security;
 
-#define FUNCTION_FIELD(retype, name, ...) LASTFM_DECL retype lastfm_##name(__VA_ARGS__);
+#define FUNCTION_FIELD(retype, name, ...) LASTFMWEB_DECL retype lastfmweb_##name(__VA_ARGS__);
 
 FUNCTION_FIELD_LIST
 
 #undef FUNCTION_FIELD
 
-static source __lastfm_source = {
-	.destroy = lastfm_source_destroy,
-	.rsp = lastfm_recomm_single,
-	.rmp = lastfm_recomm_multi,
-	.sh = lastfm_security_handle,
+static source __lastfmweb_source = {
+	.destroy = lastfmweb_source_destroy,
+	.rsp = lastfmweb_recomm_single,
+	.rmp = lastfmweb_recomm_multi,
+	.sh = lastfmweb_security_handle,
 	.security = &__security,
 };
 
-struct lastfm_source {
+struct lastfmweb_source {
 	source src;
 	CURL *curl;
 
-	config_t *cfg;
+	char *base_url;
+	u8s username;
+	char *recomm_path;
+	char *recomm_method;
+	char *recomm_accept;
+	char *recomm_parameter;
 };
 
-LASTFM_DECL
-int lastfm_source_init(void *sp, config_t *cfg)
+LASTFMWEB_DECL
+int lastfmweb_source_init(void *sp, config_t *cfg)
 {
 	globalCurlInit();
-	lastfm_source *s = (lastfm_source *)sp;
-	s->src = __lastfm_source;
+	lastfmweb_source *s = (lastfmweb_source *)sp;
+	s->src = __lastfmweb_source;
 
 	if (_securityinit(s->src.security, cfg) < 0)
 		return -1;
@@ -79,17 +84,22 @@ int lastfm_source_init(void *sp, config_t *cfg)
 	if (s->curl == NULL)
 		return -1;
 
-	s->cfg = cfg;
+	s->base_url = xstrdup(cfg->lastfm_base_url);
+	s->username = u8sdup(cfg->lastfm_username);
+	s->recomm_path = xstrdup(cfg->lastfmweb_recomm_path);
+	s->recomm_method = xstrdup(cfg->lastfmweb_recomm_method);
+	s->recomm_accept = xstrdup(cfg->lastfmweb_recomm_accept);
+	s->recomm_parameter = xstrdup(cfg->lastfmweb_recomm_parameter);
 
 	return 0;
 }
 
-int lastfm_source_new(source **src, config_t *cfg)
+int lastfmweb_source_new(source **src, config_t *cfg)
 {
 	assert(cfg);
 	*src = NULL;
-	void *s = xmalloc(sizeof(struct lastfm_source));
-	if (lastfm_source_init(s, cfg) < 0) {
+	void *s = xmalloc(sizeof(struct lastfmweb_source));
+	if (lastfmweb_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
 	}
@@ -97,8 +107,19 @@ int lastfm_source_new(source **src, config_t *cfg)
 	return 0;
 }
 
-LASTFM_DECL
-char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_parameter, ...)
+// curl function
+// write back in curlbuf
+LASTFMWEB_DECL
+size_t lastfmweb_write_callback(char *ptr, const size_t size, const size_t nmemb, curlbuf *cb)
+{
+	const size_t real = size * nmemb;
+	curlbuf_append(cb, ptr, real);
+
+	return real;
+}
+
+LASTFMWEB_DECL
+char *lastfmweb_parse_url(lastfmweb_source *s, const char *_path, const char *_parameter, ...)
 {
 	va_list paras;
 	char *realurl, *base_url,
@@ -108,12 +129,11 @@ char *lastfm_parse_url(lastfm_source *s, const char *_path, const char *_paramet
 	int bufstrlen;
 	CURLU *h = NULL;
 
-	config_t *cfg = s->cfg;
-	base_url = cfg->lastfm_base_url;
+	base_url = s->base_url;
 	// future: wrapper parseKVFormat with lastfm config map,
 	// in order to automatically parse path
 	path = parseKVFormat(_path,
-			     MAKE_KV("username", (const char *)cfg->lastfm_username), KV_END);
+			     MAKE_KV("username", (const char *)s->username), KV_END);
 
 	if (path == NULL)
 		mxrec_cleanup(cleanup, realurl, NULL);
@@ -160,13 +180,56 @@ cleanup:
 	return realurl;
 }
 
+LASTFMWEB_DECL
+int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, bool use_security, curlbuf *buf,
+			   const char *method, const char *url, size_t header_count, ...)
+{
+	va_list hs;
+	size_t i;
+	if (use_security)
+		perform_security(s);
+
+	struct curl_slist *h = NULL;
+
+#if 1
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+#endif
+
+	// set url
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	// set method
+	if (strcmp(method, "GET") == 0) {
+		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+	} else if (strcmp(method, "POST") == 0) {
+		curl_easy_setopt(curl, CURLOPT_POST, 1L);
+	}
+
+	// set headers
+	va_start(hs, header_count);
+
+	for (i = 0; i < header_count; ++i) {
+		const char *header = va_arg(hs, const char *);
+		h = curl_slist_append(h, header);
+	}
+
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, h);
+
+	// set write callback
+	curlbuf_init(buf, BUF_DEFAULT_CAP);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfmweb_write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
+
+	*h_ref = h;
+	return 0;
+}
+
 // json parser
 #define JSON_READ_ERR -1
 #define JSON_PARSE_PLAYLIST_ERR -2
 #define JSON_PARSE_TRACK_ERR -3
 #define JSON_PARSE_URL_ERR -4
-LASTFM_DECL
-artist *lastfm_json2artist(yyjson_val *val, bool strict, struct json_err *err)
+LASTFMWEB_DECL
+artist *lastfmweb_json2artist(yyjson_val *val, bool strict, struct json_err *err)
 {
 	artist *ar;
 	const char *name;
@@ -185,8 +248,8 @@ cleanup:
 	return ar;
 }
 
-LASTFM_DECL
-track *lastfm_json2track(yyjson_val *val, bool strict, struct json_err *err)
+LASTFMWEB_DECL
+track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 {
 	track *tr;
 	const char *title, *album;
@@ -221,7 +284,7 @@ track *lastfm_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	artists = xmalloc(ar_size * sizeof(artists[0]));
 	yyjson_arr_foreach(ars, i, ar_size, ar)
 	{
-		a = lastfm_json2artist(ar, strict, err);
+		a = lastfmweb_json2artist(ar, strict, err);
 		if (strict && a == NULL) {
 			write_jsonerr(err, "failed to get an artist information of %s\n",
 				      title);
@@ -241,8 +304,8 @@ cleanup:
 	return tr;
 }
 
-LASTFM_DECL
-int lastfm_json2playitem(yyjson_val *val, playitem *pi, bool strict, struct json_err *err)
+LASTFMWEB_DECL
+int lastfmweb_json2playitem(yyjson_val *val, playitem *pi, bool strict, struct json_err *err)
 {
 	int ret;
 	track *tr;
@@ -252,7 +315,7 @@ int lastfm_json2playitem(yyjson_val *val, playitem *pi, bool strict, struct json
 	yyjson_val *playlink;
 	const char *url;
 
-	tr = lastfm_json2track(val, strict, err);
+	tr = lastfmweb_json2track(val, strict, err);
 	if (tr == NULL)
 		return JSON_PARSE_TRACK_ERR;
 	pi->tr = tr;
@@ -278,8 +341,8 @@ cleanup:
 	return ret;
 }
 
-LASTFM_DECL
-int lastfm_json2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, struct json_err *jerr)
+LASTFMWEB_DECL
+int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, struct json_err *jerr)
 {
 	int ret;
 	size_t i, plen, handled = 0;
@@ -316,7 +379,7 @@ int lastfm_json2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool stri
 	{
 		int pi_ret;
 		playitem_init(&pi);
-		pi_ret = lastfm_json2playitem(jpi, &pi, strict, jerr);
+		pi_ret = lastfmweb_json2playitem(jpi, &pi, strict, jerr);
 
 		if (strict && pi_ret < 0)
 			mxrec_cleanup(cleanup, ret, pi_ret);
@@ -334,48 +397,120 @@ cleanup:
 	return ret;
 }
 
-// write back in curlbuf
-LASTFM_DECL
-size_t lastfm_write_callback(char *ptr, const size_t size, const size_t nmemb, curlbuf *cb)
+LASTFMWEB_DECL
+int lastfmweb_jsonbuf2playitem(curlbuf *buf, playitem *p, bool strict, struct json_err *jerr)
 {
-	const size_t real = size * nmemb;
-	curlbuf_append(cb, ptr, real);
+	int ret, pi_ret;
+	yyjson_read_err err;
+	yyjson_doc *doc;
+	yyjson_val *root, *pls, *pi;
 
-	return real;
+	doc = yyjson_read_opts(buf->buf, buf->len,
+			       0, NULL, &err);
+
+	if (doc == NULL) {
+		write_jsonerr(jerr, "failed to parse json: %s, code: %u at byte position: %lu\n",
+			      err.msg, err.code, err.pos);
+		mxrec_cleanup(cleanup, ret, JSON_READ_ERR);
+	}
+
+	root = yyjson_doc_get_root(doc);
+	pls = yyjson_obj_get(root, "playlist");
+	if (!yyjson_is_arr(pls)) {
+		write_jsonerr(jerr, "playlist field is not an array.\n");
+		mxrec_cleanup(cleanup, ret, JSON_PARSE_PLAYLIST_ERR);
+	}
+
+	pi = yyjson_arr_get_first(pls);
+	if (pi == NULL) {
+		write_jsonerr(jerr, "playlist has no items.\n");
+		mxrec_cleanup(cleanup, ret, JSON_PARSE_PLAYLIST_ERR);
+	}
+	pi_ret = lastfmweb_json2playitem(pi, p, strict, jerr);
+	if (strict && pi_ret < 0)
+		mxrec_cleanup(cleanup, ret, pi_ret);
+	else if (pi_ret == JSON_PARSE_TRACK_ERR)
+		mxrec_cleanup(cleanup, ret, pi_ret);
+
+	ret = 0;
+cleanup:
+	yyjson_doc_free(doc);
+	return ret;
 }
 
-LASTFM_DECL
-int _lastfm_recomm_single_full(source *s, playitem *p, recomm_option opts)
+LASTFMWEB_DECL
+int _lastfmweb_recomm_single_full(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
 }
 
-LASTFM_DECL
-int _lastfm_recomm_single_simple(source *s, playitem *p, recomm_option opts)
+LASTFMWEB_DECL
+int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 {
-	// TODO
+	int ret;
+	CURLcode code;
+	curlbuf buf;
+	struct json_err jerr;
+	jerr.length = 0;
+	long http_code = 0;
+	assert(p);
+	lastfmweb_source *ls = (lastfmweb_source *)s;
+	CURL *curl = ls->curl;
+	struct curl_slist *h = NULL;
+
+	char *realurl = lastfmweb_parse_url(ls, ls->recomm_path, ls->recomm_parameter);
+	if (realurl == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf,
+				   ls->recomm_method, realurl,
+				   1, ls->recomm_accept) < 0)
+		mxrec_cleanup(cleanup, ret, -1);
+	code = curl_easy_perform(curl);
+	if (code != CURLE_OK)
+		mxrec_cleanup(cleanup, ret, -1);
+
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if (http_code != 200)
+		mxrec_cleanup(cleanup, ret, -1);
+
+	if ((ret = lastfmweb_jsonbuf2playitem(&buf, p, opts.strict, &jerr)) < 0) {
+		print_jsonerr(&jerr);
+		mxrec_cleanup(cleanup, ret, ret);
+	}
+
+	ret = 0;
+cleanup:
+	xfree(realurl);
+	curlbuf_free(&buf);
+	if (h)
+		curl_slist_free_all(h);
+	curl_easy_reset(curl);
+	return ret;
 }
 
-LASTFM_DECL
-void lastfm_source_destroy(void *sp)
+LASTFMWEB_DECL
+void lastfmweb_source_destroy(void *sp)
 {
-	lastfm_source *s = (lastfm_source *)sp;
+	lastfmweb_source *s = (lastfmweb_source *)sp;
 	_securityfree(s->src.security);
 	curl_easy_cleanup(s->curl);
+	xfree(s->base_url);
+	u8sfree(s->username);
+	xfree(s->recomm_path);
+	xfree(s->recomm_method);
+	xfree(s->recomm_accept);
+	xfree(s->recomm_parameter);
 }
 
 // interface implement
-LASTFM_DECL
-int lastfm_recomm_single(source *s, playitem *p, recomm_option opts)
+LASTFMWEB_DECL
+int lastfmweb_recomm_single(source *s, playitem *p, recomm_option opts)
 {
-	printf("Calling lastfm recomm_single\n");
-	if (opts.use_security)
-		perform_security(s);
-
+	log("Calling lastfm recomm_single\n");
 	if (opts.level == RECOMM_SIMPLE)
-		return _lastfm_recomm_single_simple(s, p, opts);
+		return _lastfmweb_recomm_single_simple(s, p, opts);
 	else if (opts.level == RECOMM_FULL)
-		return _lastfm_recomm_single_full(s, p, opts);
+		return _lastfmweb_recomm_single_full(s, p, opts);
 	else
 		return -1;
 }
@@ -386,9 +521,10 @@ int lastfm_recomm_single(source *s, playitem *p, recomm_option opts)
  * else return playlist size.
  * Doing multi calls to meet `num` value is fucking silly.
  */
-LASTFM_DECL
-int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
+LASTFMWEB_DECL
+int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
+	log("Calling lastfm recomm_multi\n");
 	int ret;
 	CURLcode code;
 	curlbuf buf;
@@ -400,42 +536,19 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 		panic("lastfm source don't support full level recommendation");
 	}
 	assert(opts.level == RECOMM_SIMPLE);
-	lastfm_source *ls = (lastfm_source *)s;
-	config_t *cfg = ls->cfg;
-	if (opts.use_security)
-		perform_security(s);
-
+	lastfmweb_source *ls = (lastfmweb_source *)s;
 	CURL *curl = ls->curl;
 	struct curl_slist *h = NULL;
 
-#if 0
-	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-#endif
-
 	// set url
-	char *realurl = lastfm_parse_url(ls,
-					 cfg->lastfm_mrc_path,
-					 cfg->lastfm_mrc_parameter, num);
+	char *realurl = lastfmweb_parse_url(ls, ls->recomm_path, ls->recomm_parameter);
 	if (realurl == NULL)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	curl_easy_setopt(curl, CURLOPT_URL, realurl);
-
-	// set method
-	if (strcmp(cfg->lastfm_mrc_method, "GET") == 0) {
-		curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-	} else if (strcmp(cfg->lastfm_mrc_method, "POST") == 0) {
-		curl_easy_setopt(curl, CURLOPT_POST, 1L);
-	}
-
-	// set headers
-	h = curl_slist_append(h, cfg->lastfm_mrc_accept);
-	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, h);
-
-	// set write callback
-	curlbuf_init(&buf, BUF_DEFAULT_CAP);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfm_write_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf,
+				   ls->recomm_method, realurl,
+				   1, ls->recomm_accept) < 0)
+		mxrec_cleanup(cleanup, ret, -1);
 
 	code = curl_easy_perform(curl);
 	if (code != CURLE_OK)
@@ -445,25 +558,27 @@ int lastfm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	if (http_code != 200)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	if ((ret = lastfm_json2playlist(&buf, num, p, opts.strict, &jerr)) < 0)
+	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p,
+					      opts.strict, &jerr)) < 0) {
+		print_jsonerr(&jerr);
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
 cleanup:
-	// TODO log jerr
 	xfree(realurl);
+	curlbuf_free(&buf);
 	if (h)
 		curl_slist_free_all(h);
-	curlbuf_free(&buf);
 	curl_easy_reset(curl);
 	return ret;
 }
 
-LASTFM_DECL
-void lastfm_security_handle(source *s)
+LASTFMWEB_DECL
+void lastfmweb_security_handle(source *s)
 {
 	CURLcode code = CURLE_OK;
-	lastfm_source *ls = (lastfm_source *)s;
-	lastfm_security *lsc = (lastfm_security *)(s->security);
+	lastfmweb_source *ls = (lastfmweb_source *)s;
+	lastfmweb_security *lsc = (lastfmweb_security *)(s->security);
 	CURL *curl = ls->curl;
 	// impersonate
 	code = curl_easy_impersonate(curl, lsc->profile, 1L);

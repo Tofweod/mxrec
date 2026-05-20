@@ -19,6 +19,10 @@ typedef playitem *playlist;
 
 void playitem_init(playitem *pi);
 int playitem_addurl(playitem *pi, const char *url);
+/**
+ * playitem will only free it's fields,
+ * while playlist, track and artist will free themselves.
+ */
 void playitem_free(playitem *pi);
 
 void dumpPlaylist(const playlist pl);

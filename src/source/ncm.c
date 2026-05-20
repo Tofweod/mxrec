@@ -37,7 +37,6 @@ static int ncm_source_init(void *sp, config_t *cfg)
 	ncm_source *s = (ncm_source *)sp;
 	s->src = __ncm_source;
 
-	s->email = xstrdup(cfg->ncm_email);
 	s->cookie = xstrdup(cfg->ncm_cookie);
 
 	return 0;
