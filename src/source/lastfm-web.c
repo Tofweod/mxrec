@@ -224,6 +224,8 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 }
 
 // json parser
+#define JSON_ERR_HEAD "LASTFMWEB"
+
 #define JSON_READ_ERR -1
 #define JSON_PARSE_PLAYLIST_ERR -2
 #define JSON_PARSE_TRACK_ERR -3
@@ -236,8 +238,9 @@ artist *lastfmweb_json2artist(yyjson_val *val, bool strict, struct json_err *err
 
 	name = yyjson_get_str(yyjson_obj_get(val, "name"));
 	if (name == NULL) {
-		write_jsonerr(err, "failed to parse field \"name\" "
-				   "into string in artist.\n");
+		write_jsonerr(err, "[%s]: failed to parse field \"name\" "
+				   "into string in artist.\n",
+			      JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ar, 0);
 	}
 
@@ -260,23 +263,24 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	// name
 	title = yyjson_get_str(yyjson_obj_get(val, "name"));
 	if (title == NULL) {
-		write_jsonerr(err, "failed to parse field \"name\" "
-				   "into string in playlist item.\n");
+		write_jsonerr(err, "[%s]: failed to parse field \"name\" "
+				   "into string in playlist item.\n",
+			      JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
 
 	// album
 	album = yyjson_get_str(yyjson_obj_get(val, "primary_album"));
 	if (strict && album == NULL) {
-		write_jsonerr(err, "failed to get album information of %s\n.",
-			      title);
+		write_jsonerr(err, "[%s]: failed to get album information of %s\n.",
+			      JSON_ERR_HEAD, title);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
 
 	// aritsts
 	ars = yyjson_obj_get(val, "artists");
 	if (!yyjson_is_arr(ars)) {
-		write_jsonerr(err, "artists field is not an array.\n");
+		write_jsonerr(err, "[%s]: artists field is not an array.\n", JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
 
@@ -286,15 +290,15 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	{
 		a = lastfmweb_json2artist(ar, strict, err);
 		if (strict && a == NULL) {
-			write_jsonerr(err, "failed to get an artist information of %s\n",
-				      title);
+			write_jsonerr(err, "[%s]: failed to get an artist information of %s\n",
+				      JSON_ERR_HEAD, title);
 			mxrec_cleanup(cleanup, tr, 0);
 		}
 		artists[i] = a;
 	}
 
 	if (artists[0] == NULL) {
-		write_jsonerr(err, "%s cann't get the artist information.", title);
+		write_jsonerr(err, "[%s]: %s cann't get the artist information.", JSON_ERR_HEAD, title);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
 
@@ -324,8 +328,8 @@ int lastfmweb_json2playitem(yyjson_val *val, playitem *pi, bool strict, struct j
 	playlinks = yyjson_obj_get(val, "playlinks");
 	if (!yyjson_is_arr(playlinks)) {
 		if (strict) {
-			write_jsonerr(err, "playlinks field is not an array.\n");
-			write_jsonerr(err, "ignore url error of %s\n", tr->title);
+			write_jsonerr(err, "[%s]: playlinks field is not an array.\n", JSON_ERR_HEAD);
+			write_jsonerr(err, "[%s]: ignore url error of %s\n", JSON_ERR_HEAD, tr->title);
 		}
 		mxrec_cleanup(cleanup, ret, JSON_PARSE_URL_ERR);
 	}
@@ -359,15 +363,15 @@ int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, boo
 			       0, NULL, &err);
 
 	if (doc == NULL) {
-		write_jsonerr(jerr, "failed to parse json: %s, code: %u at byte position: %lu\n",
-			      err.msg, err.code, err.pos);
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
 		mxrec_cleanup(cleanup, ret, JSON_READ_ERR);
 	}
 
 	root = yyjson_doc_get_root(doc);
 	pls = yyjson_obj_get(root, "playlist");
 	if (!yyjson_is_arr(pls)) {
-		write_jsonerr(jerr, "playlist field is not an array.\n");
+		write_jsonerr(jerr, "[%s]: playlist field is not an array.\n", JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ret, JSON_PARSE_PLAYLIST_ERR);
 	}
 
@@ -409,21 +413,21 @@ int lastfmweb_jsonbuf2playitem(curlbuf *buf, playitem *p, bool strict, struct js
 			       0, NULL, &err);
 
 	if (doc == NULL) {
-		write_jsonerr(jerr, "failed to parse json: %s, code: %u at byte position: %lu\n",
-			      err.msg, err.code, err.pos);
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
 		mxrec_cleanup(cleanup, ret, JSON_READ_ERR);
 	}
 
 	root = yyjson_doc_get_root(doc);
 	pls = yyjson_obj_get(root, "playlist");
 	if (!yyjson_is_arr(pls)) {
-		write_jsonerr(jerr, "playlist field is not an array.\n");
+		write_jsonerr(jerr, "[%s]: playlist field is not an array.\n", JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ret, JSON_PARSE_PLAYLIST_ERR);
 	}
 
 	pi = yyjson_arr_get_first(pls);
 	if (pi == NULL) {
-		write_jsonerr(jerr, "playlist has no items.\n");
+		write_jsonerr(jerr, "[%s]: playlist has no items.\n", JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ret, JSON_PARSE_PLAYLIST_ERR);
 	}
 	pi_ret = lastfmweb_json2playitem(pi, p, strict, jerr);

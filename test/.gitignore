@@ -3,7 +3,7 @@ compile_commands.json
 
 # test program
 u8s-basic
-lastfm-source
+lastfm-web-source
 b64-qr
 util-string
 da-test
