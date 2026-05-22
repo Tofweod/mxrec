@@ -4,6 +4,8 @@
 // methods of api
 #define LASTFMAPI_FORMAT "json"
 #define LASTFMAPI_USER_GETRECENTTRACKS "User.getrecenttracks"
+#define LASTFMAPI_TRACK_GETSIMILAR
+#define LASTFMAPI_ARTIST_GETSIMILAR
 
 #include "comm-source.h"
 

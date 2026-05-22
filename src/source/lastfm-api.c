@@ -1,9 +1,10 @@
 #include "lastfm-api.h"
-#include "assert.h"
 #include "bb.h"
 #include "comm.h"
 #include "config.h"
+#include "curl-impersonate.h"
 #include "json.h"
+#include "lastfm-security.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
@@ -16,7 +17,11 @@
 #include <curl/curl.h>
 #include <time.h>
 
+#define LASTFMAPI_DEBUG
+
 #define LASTFMAPI_DECL static
+
+#define JSON_ERR_HEAD "LASTFMWEB"
 
 // curlbuf
 #define BUF_DEFAULT_CAP (1024)
@@ -48,19 +53,152 @@ time_t lastfmapi_now(void)
 
 typedef struct lastfmapi_track {
 	double score;
-	struct {
+	struct tr_key_t {
 		u8s name;
 		u8s artist;
 		char *ar_mbid;
-	} tr;
-	UT_hash_handle hh;
+	} key;
 	time_t ruts;
+	UT_hash_handle hh;
 } la_track;
 
-// la_track json parsing
-int lastfmapi_jsonbuf2latrack_map(curlbuf *buf, la_track **la_tr_map, struct json_err *jerr)
+void la_track_free(la_track *ltr)
+{
+	if (ltr == NULL)
+		return;
+	u8sfree(ltr->key.name);
+	u8sfree(ltr->key.artist);
+	xfree(ltr->key.ar_mbid);
+}
+
+la_track *la_track_new(const char *name, const char *artist, const char *ar_mid,
+		       unsigned long long uts)
+{
+	la_track *ltr;
+	time_t now;
+	ltr = xmalloc(sizeof(*ltr));
+	ltr->key.name = u8snew(name);
+	ltr->key.artist = u8snew(artist);
+	ltr->key.ar_mbid = strdup(ar_mid);
+
+	now = lastfmapi_now();
+
+	assert(now >= uts);
+	ltr->ruts = now - uts;
+	return ltr;
+}
+
+void la_track_map_cleanup(la_track *m)
+{
+	la_track *cur, *tmp;
+	HASH_ITER(hh, m, cur, tmp)
+	{
+#ifdef LASTFMAPI_DEBUG
+		printf("name:%s-artist:%s-ar_mid:%s-%lu\n",
+		       cur->key.name, cur->key.artist, cur->key.ar_mbid,
+		       cur->ruts);
+#endif
+		HASH_DEL(m, cur);
+		la_track_free(cur);
+		xfree(cur);
+	}
+}
+
+LASTFMAPI_DECL
+int lastfmapi_latrack2playitem()
 {
 	// TODO
+}
+
+// core: diffusion recommendation recursively
+LASTFMAPI_DECL
+int lastfmapi_diffusion_recomm(la_track *map, playlist *p)
+{
+	// TODO
+}
+
+// la_track json parsing
+la_track *lastfmapi_json2latrack(yyjson_val *val, bool strict, struct json_err *err)
+{
+	la_track *ltr;
+	yyjson_val *jname, *jar;
+	const char *name, *ar, *ar_mid, *uts_s;
+	unsigned long long uts;
+
+	jname = yyjson_obj_get(val, "name");
+	name = yyjson_get_str(jname);
+	if (name == NULL) {
+		mxrec_cleanup(cleanup, ltr, 0);
+	}
+
+	jar = yyjson_obj_get(val, "artist");
+	ar = yyjson_get_str(yyjson_obj_get(jar, "#text"));
+	if (ar == NULL)
+		mxrec_cleanup(cleanup, ltr, 0);
+
+	ar_mid = yyjson_get_str(yyjson_obj_get(jar, "mbid"));
+	if (ar_mid == NULL)
+		mxrec_cleanup(cleanup, ltr, 0);
+
+	uts_s = yyjson_get_str(yyjson_obj_get(
+		yyjson_obj_get(val, "date"), "uts"));
+	if (uts_s == NULL)
+		mxrec_cleanup(cleanup, ltr, 0);
+
+	if (!string2ull(uts_s, &uts))
+		mxrec_cleanup(cleanup, ltr, 0);
+
+	ltr = la_track_new(name, ar, ar_mid, uts);
+cleanup:
+	return ltr;
+}
+
+int lastfmapi_jsonbuf2latrack_map(curlbuf *buf, bool strict, la_track **la_tr_map, struct json_err *jerr)
+{
+	int ret;
+	size_t i, track_size;
+	yyjson_read_err err;
+	yyjson_doc *doc;
+	yyjson_val *root, *tracks, *track;
+	la_track *m, *ltr;
+	m = NULL;
+
+	doc = yyjson_read_opts(buf->buf, buf->len,
+			       0, NULL, &err);
+	if (doc == NULL) {
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	root = yyjson_doc_get_root(doc);
+	tracks = yyjson_obj_get(yyjson_obj_get(root, "recenttracks"), "track");
+	if (tracks == NULL || !yyjson_is_arr(tracks)) {
+		write_jsonerr(jerr, "[%s]: failed to parse field \".recenttracks.track\" into array",
+			      JSON_ERR_HEAD);
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	track_size = yyjson_arr_size(tracks);
+
+	yyjson_arr_foreach(tracks, i, track_size, track)
+	{
+		ltr = lastfmapi_json2latrack(track, strict, jerr);
+		if (ltr == NULL) {
+			if (strict) {
+				write_jsonerr(jerr, "[%s]: failed to get track", JSON_ERR_HEAD);
+				mxrec_cleanup(cleanup, ret, -1);
+			}
+			continue;
+		}
+		HASH_ADD(hh, m, key, sizeof(struct tr_key_t), ltr);
+	}
+
+	ret = 0;
+cleanup:
+	yyjson_doc_free(doc);
+	*la_tr_map = m;
+	return ret;
 }
 
 static source __lastfmapi_source = {
@@ -68,7 +206,7 @@ static source __lastfmapi_source = {
 	.rsp = lastfmapi_recomm_single,
 	.rmp = lastfmapi_recomm_multi,
 	.sh = lastfmapi_security_handle,
-	.security = 0,
+	.security = &__lastfm_security,
 };
 
 struct lastfmapi_source {
@@ -138,7 +276,15 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-int lastfmapi_curl(curlbuf *buf, CURL *curl, bool security, const char *base_url,
+void lastfmapi_curl_error(FILE *fp, long http_code, curlbuf *buf)
+{
+	// TODO
+	switch (http_code) {
+	}
+}
+
+LASTFMAPI_DECL
+int lastfmapi_curl(source *s, curlbuf *buf, CURL *curl, bool security, const char *base_url,
 		   const char *method, unsigned para_count, ...)
 {
 	int ret;
@@ -146,9 +292,12 @@ int lastfmapi_curl(curlbuf *buf, CURL *curl, bool security, const char *base_url
 	long http_code = 0;
 	va_list paras;
 	char *url;
-	if (security) {
-		// TODO
-	}
+	if (security)
+		perform_security(s);
+
+#ifdef LASTFMAPI_DEBUG
+	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+#endif
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfmapi_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
@@ -166,12 +315,15 @@ int lastfmapi_curl(curlbuf *buf, CURL *curl, bool security, const char *base_url
 
 	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
 	if (http_code != 200)
-		mxrec_cleanup(cleanup, ret, -1);
+		mxrec_cleanup(err, ret, -2);
 
 	ret = 0;
 cleanup:
 	xfree(url);
 	curl_easy_reset(curl);
+	return ret;
+err:
+	lastfmapi_curl_error(stderr, http_code, buf);
 	return ret;
 }
 
@@ -182,11 +334,13 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	lastfmapi_source *s = (lastfmapi_source *)sp;
 	s->src = __lastfmapi_source;
 
+	if (lastfm_security_init(s->src.security, cfg) < 0)
+		return -1;
+
 	s->curl = curl_easy_init();
 	if (s->curl == NULL)
 		return -1;
 
-	// TODO
 	s->username = u8sdup(cfg->lastfm_username);
 	s->base_url = xstrdup(cfg->lastfmapi_base_url);
 	s->key = xstrdup(cfg->lastfmapi_key);
@@ -212,8 +366,8 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 LASTFMAPI_DECL
 void lastfmapi_source_destroy(void *sp)
 {
-	// TODO
 	lastfmapi_source *s = (lastfmapi_source *)sp;
+	lastfm_security_free(s->src.security);
 	u8sfree(s->username);
 	xfree(s->base_url);
 	xfree(s->key);
@@ -233,7 +387,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	log("Calling lastfm-api recomm_multi\n");
 	int ret;
 	curlbuf buf;
-	la_track *la_tr_map;
+	la_track *la_tr_map = NULL;
 	struct json_err jerr;
 	jerr.length = 0;
 
@@ -255,7 +409,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	limit_str[str_len] = '\0';
 
-	if ((ret = lastfmapi_curl(&buf, ls->curl, opts.use_security,
+	if ((ret = lastfmapi_curl(s, &buf, ls->curl, opts.use_security,
 				  ls->base_url,
 				  LASTFMAPI_USER_GETRECENTTRACKS, 4,
 				  MAKE_KV("username", (char *)ls->username),
@@ -264,18 +418,19 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 				  MAKE_KV("format", LASTFMAPI_FORMAT)) < 0))
 		mxrec_cleanup(cleanup, ret, ret);
 
-	// lastfm_track map
-	if ((ret = lastfmapi_jsonbuf2latrack_map(&buf, &la_tr_map,
+	// recent tracks map
+	if ((ret = lastfmapi_jsonbuf2latrack_map(&buf, opts.strict, &la_tr_map,
 						 &jerr)) < 0) {
 		print_jsonerr(&jerr);
 		mxrec_cleanup(cleanup, ret, ret);
 	}
-
 	curlbuf_clear(&buf);
 
 	// TODO diffusion recommendation
+	ret = lastfmapi_diffusion_recomm(la_tr_map, p);
 
 cleanup:
+	la_track_map_cleanup(la_tr_map);
 	curlbuf_free(&buf);
 	return ret;
 }
@@ -283,5 +438,15 @@ cleanup:
 LASTFMAPI_DECL
 void lastfmapi_security_handle(source *s)
 {
-	(void)s;
+	CURLcode code = CURLE_OK;
+	lastfmapi_source *ls = (lastfmapi_source *)s;
+	lastfm_security *lsc = (lastfm_security *)(s->security);
+	CURL *curl = ls->curl;
+	// impersonate
+	code = curl_easy_impersonate(curl, lsc->profile, 1L);
+	if (code != CURLE_OK) {
+		error("impersonate failed with profile %s:\'%s\', using curl without security", lsc->profile,
+		      curl_easy_strerror(code));
+		curl_easy_reset(curl);
+	}
 }

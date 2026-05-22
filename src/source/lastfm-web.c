@@ -7,6 +7,7 @@
 #include "curl-impersonate.h"
 #include "da.h"
 #include "json.h"
+#include "lastfm-security.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
@@ -23,25 +24,6 @@
 
 BUFFERBUILDER_INIT(mxrec_unused LASTFMWEB_DECL, curlbuf, curlbuf, void);
 
-typedef struct lastfmweb_security {
-	char *profile;
-} lastfmweb_security;
-
-LASTFMWEB_DECL
-int _securityinit(lastfmweb_security *security, config_t *cfg)
-{
-	security->profile = xstrdup(cfg->lastfm_security_profile);
-	return 0;
-}
-
-LASTFMWEB_DECL
-void _securityfree(lastfmweb_security *security)
-{
-	xfree(security->profile);
-}
-
-static lastfmweb_security __security;
-
 #define FUNCTION_FIELD(retype, name, ...) LASTFMWEB_DECL retype lastfmweb_##name(__VA_ARGS__);
 
 FUNCTION_FIELD_LIST
@@ -53,7 +35,7 @@ static source __lastfmweb_source = {
 	.rsp = lastfmweb_recomm_single,
 	.rmp = lastfmweb_recomm_multi,
 	.sh = lastfmweb_security_handle,
-	.security = &__security,
+	.security = &__lastfm_security,
 };
 
 struct lastfmweb_source {
@@ -75,7 +57,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	lastfmweb_source *s = (lastfmweb_source *)sp;
 	s->src = __lastfmweb_source;
 
-	if (_securityinit(s->src.security, cfg) < 0)
+	if (lastfm_security_init(s->src.security, cfg) < 0)
 		return -1;
 
 	s->curl = curl_easy_init();
@@ -495,7 +477,7 @@ LASTFMWEB_DECL
 void lastfmweb_source_destroy(void *sp)
 {
 	lastfmweb_source *s = (lastfmweb_source *)sp;
-	_securityfree(s->src.security);
+	lastfm_security_free(s->src.security);
 	curl_easy_cleanup(s->curl);
 	xfree(s->base_url);
 	u8sfree(s->username);
@@ -581,7 +563,7 @@ void lastfmweb_security_handle(source *s)
 {
 	CURLcode code = CURLE_OK;
 	lastfmweb_source *ls = (lastfmweb_source *)s;
-	lastfmweb_security *lsc = (lastfmweb_security *)(s->security);
+	lastfm_security *lsc = (lastfm_security *)(s->security);
 	CURL *curl = ls->curl;
 	// impersonate
 	code = curl_easy_impersonate(curl, lsc->profile, 1L);

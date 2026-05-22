@@ -21,7 +21,7 @@ int main()
 	}
 
 	if (recomm_multi(s, 50, &p, .level = RECOMM_SIMPLE, .use_security = true) > 0) {
-		playlist_free(p);
+		/* playlist_free(p); */
 	}
 
 	source_free(s);
