@@ -5,21 +5,24 @@
 #include <limits.h>
 #include <stdint.h>
 
-#define CONFIG_FIELD_LIST                                    \
-	CONFIG_FIELD(uint64_t, timeout, (void))              \
-	CONFIG_FIELD(uint64_t, max_try, (void))              \
-	CONFIG_FIELD(char *, lastfm_base_url, xfree)         \
-	CONFIG_FIELD(u8s, lastfm_username, u8sfree)          \
-	CONFIG_FIELD(char *, lastfm_security_profile, xfree) \
-	CONFIG_FIELD(char *, lastfm_method, xfree) \
-	CONFIG_FIELD(char *, lastfm_api_key, xfree) \
-	CONFIG_FIELD(char *, lastfmweb_recomm_path, xfree)         \
-	CONFIG_FIELD(char *, lastfmweb_recomm_method, xfree)       \
-	CONFIG_FIELD(char *, lastfmweb_recomm_parameter, xfree)       \
-	CONFIG_FIELD(char *, lastfmweb_recomm_accept, xfree)       \
-	CONFIG_FIELD(char *, ncm_cookie, xfree)              \
-	CONFIG_FIELD(char *, ncm_bind_method, xfree)         \
-	CONFIG_FIELD(char *, ncm_bind_address, xfree)        \
+#define CONFIG_FIELD_LIST                                       \
+	CONFIG_FIELD(uint64_t, timeout, (void))                 \
+	CONFIG_FIELD(uint64_t, max_try, (void))                 \
+	CONFIG_FIELD(u8s, lastfm_username, u8sfree)             \
+	CONFIG_FIELD(char *, lastfm_security_profile, xfree)    \
+	CONFIG_FIELD(char *, lastfm_method, xfree)              \
+	CONFIG_FIELD(char *, lastfmapi_base_url, xfree)         \
+	CONFIG_FIELD(char *, lastfmapi_key, xfree)              \
+	CONFIG_FIELD(char *, lastfmapi_period, xfree)           \
+	CONFIG_FIELD(int, lastfmapi_diffusion, (void))          \
+	CONFIG_FIELD(char *, lastfmweb_base_url, xfree)         \
+	CONFIG_FIELD(char *, lastfmweb_recomm_path, xfree)      \
+	CONFIG_FIELD(char *, lastfmweb_recomm_method, xfree)    \
+	CONFIG_FIELD(char *, lastfmweb_recomm_parameter, xfree) \
+	CONFIG_FIELD(char *, lastfmweb_recomm_accept, xfree)    \
+	CONFIG_FIELD(char *, ncm_cookie, xfree)                 \
+	CONFIG_FIELD(char *, ncm_bind_method, xfree)            \
+	CONFIG_FIELD(char *, ncm_bind_address, xfree)           \
 	CONFIG_FIELD(uint16_t, ncm_port, (void))
 
 typedef struct config_t {

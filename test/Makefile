@@ -35,6 +35,10 @@ lastfm-web-source: lastfm-web-source.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"
 
+lastfm-api-source: lastfm-api-source.c $(LIB_OBJS)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
+	@echo "Built $@"
+
 util-string: util-string.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"

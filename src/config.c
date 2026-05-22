@@ -23,13 +23,21 @@ static int config_check(config_t *cfg)
 	while (0)
 
 	// TODO
-	cfg_check(lastfm_base_url);
+	cfg_check(lastfmweb_base_url);
 	cfg_check(lastfm_username);
 	cfg_check(lastfmweb_recomm_path);
 
 	cfg_check(ncm_cookie);
 
 	return ret;
+}
+
+static void removeURLEndSlash(char *url)
+{
+	size_t len = strlen(url);
+	if (len > 0 && url[len - 1] == '/') {
+		url[len - 1] = '\0';
+	}
 }
 
 static inline bool load_config_from_file(const char *filename, config_t *cfg)
@@ -48,17 +56,19 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->max_try = iniparser_getuint64(d, "general:max-try", 3);
 
 	// lastfm
-	cfg->lastfm_base_url = xstrdup(iniparser_getstring(d, "lastfm:base-url", NULL));
-	size_t lastfm_base_url_len = strlen(cfg->lastfm_base_url);
-	if (lastfm_base_url_len > 0 && cfg->lastfm_base_url[lastfm_base_url_len - 1] == '/') {
-		cfg->lastfm_base_url[lastfm_base_url_len - 1] = '\0';
-	}
-	cfg->lastfm_method = xstrdup(iniparser_getstring(d,"lastfm.method",NULL));
-	cfg->lastfm_api_key = xstrdup(iniparser_getstring(d,"lastfm.api-key",NULL));
+	cfg->lastfm_method = xstrdup(iniparser_getstring(d, "lastfm.method", NULL));
 	cfg->lastfm_username = u8snew(iniparser_getstring(d, "lastfm:username", NULL));
 	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "chrome116"));
 
-	// lastfm multi_recomm
+	// lastfm api
+	cfg->lastfmapi_base_url = xstrdup(iniparser_getstring(d, "lastfm.api:base-url", NULL));
+	cfg->lastfmapi_key = xstrdup(iniparser_getstring(d, "lastfm.api:key", NULL));
+	cfg->lastfmapi_period = xstrdup(iniparser_getstring(d, "lastfm.api:period", NULL));
+	cfg->lastfmapi_diffusion = iniparser_getint(d, "lastfm.api:diffusion", 0);
+
+	// lastfm web
+	cfg->lastfmweb_base_url = xstrdup(iniparser_getstring(d, "lastfm.web:base-url", NULL));
+	removeURLEndSlash(cfg->lastfmweb_base_url);
 	cfg->lastfmweb_recomm_path = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-path", NULL));
 	cfg->lastfmweb_recomm_method = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-method", "GET"));
 	cfg->lastfmweb_recomm_parameter = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-parameter", NULL));

@@ -146,7 +146,8 @@ static inline void source_clearuserdata(source *s)
 static inline void perform_security(void *sp)
 {
 	source *s = (source *)sp;
-	s->sh(s);
+	if (s->sh)
+		s->sh(s);
 }
 
 #define recomm_single(s, p, ...) _recomm_single((s), (p), (recomm_option){__VA_ARGS__})

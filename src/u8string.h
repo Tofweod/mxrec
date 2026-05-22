@@ -146,7 +146,7 @@ u8s u8schr(const u8s s, u8cp c);
 // record length of returned codepoint array
 u8cp *u8s2codepoint(const u8s s, size_t *len);
 void u8strim(u8s s, const u8s cset);
-// TODO paramter type
+// TODO parameter type
 void u8ssubstr(u8s s, size_t start, size_t len);
 void u8srange(u8s s, u8s_ssize_t start, u8s_ssize_t end);
 void u8sclear(u8s s);

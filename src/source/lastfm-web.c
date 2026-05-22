@@ -21,8 +21,7 @@
 
 #define BUF_DEFAULT_CAP (1024)
 
-// TODO  bufclear will be used in retry-implementation
-BUFFERBUILDER_INIT(LASTFMWEB_DECL, curlbuf, curlbuf, void);
+BUFFERBUILDER_INIT(mxrec_unused LASTFMWEB_DECL, curlbuf, curlbuf, void);
 
 typedef struct lastfmweb_security {
 	char *profile;
@@ -84,7 +83,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	if (s->curl == NULL)
 		return -1;
 
-	s->base_url = xstrdup(cfg->lastfm_base_url);
+	s->base_url = xstrdup(cfg->lastfmweb_base_url);
 	s->username = u8sdup(cfg->lastfm_username);
 	s->recomm_path = xstrdup(cfg->lastfmweb_recomm_path);
 	s->recomm_method = xstrdup(cfg->lastfmweb_recomm_method);
@@ -94,7 +93,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	return 0;
 }
 
-int lastfmweb_source_new(source **src, config_t *cfg)
+extern int lastfmweb_source_new(source **src, config_t *cfg)
 {
 	assert(cfg);
 	*src = NULL;
@@ -445,7 +444,7 @@ cleanup:
 LASTFMWEB_DECL
 int _lastfmweb_recomm_single_full(source *s, playitem *p, recomm_option opts)
 {
-	// TODO
+	return -1;
 }
 
 LASTFMWEB_DECL
@@ -510,7 +509,7 @@ void lastfmweb_source_destroy(void *sp)
 LASTFMWEB_DECL
 int lastfmweb_recomm_single(source *s, playitem *p, recomm_option opts)
 {
-	log("Calling lastfm recomm_single\n");
+	log("Calling lastfm-web recomm_single\n");
 	if (opts.level == RECOMM_SIMPLE)
 		return _lastfmweb_recomm_single_simple(s, p, opts);
 	else if (opts.level == RECOMM_FULL)
@@ -528,7 +527,7 @@ int lastfmweb_recomm_single(source *s, playitem *p, recomm_option opts)
 LASTFMWEB_DECL
 int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
-	log("Calling lastfm recomm_multi\n");
+	log("Calling lastfm-web recomm_multi\n");
 	int ret;
 	CURLcode code;
 	curlbuf buf;
@@ -537,7 +536,7 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	long http_code = 0;
 	assert(p);
 	if (opts.level == RECOMM_FULL) {
-		panic("lastfm source don't support full level recommendation");
+		panic("lastfm web source don't support full level recommendation");
 	}
 	assert(opts.level == RECOMM_SIMPLE);
 	lastfmweb_source *ls = (lastfmweb_source *)s;

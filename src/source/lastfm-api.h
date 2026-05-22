@@ -1,7 +1,12 @@
 #ifndef TOF_MXREC_LASTFM_API_H
 #define TOF_MXREC_LASTFM_API_H
 
+// methods of api
+#define LASTFMAPI_FORMAT "json"
+#define LASTFMAPI_USER_GETRECENTTRACKS "User.getrecenttracks"
+
 #include "comm-source.h"
+
 
 typedef struct lastfmapi_source lastfmapi_source;
 

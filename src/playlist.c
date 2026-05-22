@@ -34,6 +34,8 @@ int playitem_addurl(playitem *pi, const char *url)
 void playitem_free(playitem *pi)
 {
 	unsigned i;
+	if (pi == NULL)
+		return;
 
 	track_free(pi->tr);
 	for (i = 0; i < pi->url_size; ++i)
@@ -43,6 +45,8 @@ void playitem_free(playitem *pi)
 
 void playlist_free(playlist pl)
 {
+	if (pl == NULL)
+		return;
 	size_t i, len = da_len(pl);
 	for (i = 0; i < len; ++i) {
 		playitem_free(&pl[i]);

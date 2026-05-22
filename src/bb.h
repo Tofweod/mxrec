@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define __BB_TYPE(bbtype, buf_t) \
-	typedef struct {         \
+	typedef struct bbtype {  \
 		buf_t *buf;      \
 		size_t len;      \
 		size_t cap;      \
