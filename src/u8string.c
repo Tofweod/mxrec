@@ -473,6 +473,12 @@ int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type)
 
 	if (result)
 		*result = U8S_OK;
+	if (s1 == NULL && s2 == NULL)
+		return 0;
+	if (s1 == NULL)
+		return -1;
+	if (s2 == NULL)
+		return 1;
 
 	h1 = U8S_HDR(s1);
 	h2 = U8S_HDR(s2);

@@ -87,9 +87,9 @@ static inline int source_before_recomm(source *s, void *userdata)
 	return ret;
 }
 
-static inline int source_after_recomm(source *s, void *userdata)
+static inline int source_after_recomm(source *s, void *userdata, int old)
 {
-	int ret = 0;
+	int ret = old;
 	if (s->ar) {
 		ret = s->ar(s, userdata);
 		source_clearuserdata(userdata);
@@ -107,7 +107,7 @@ static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
 	ret = s->rsp(s, p, opts);
 	if (ret < 0)
 		mxrec_cleanup(rs_cleanup, ret, ret);
-	ret = source_after_recomm(s, s->userdata);
+	ret = source_after_recomm(s, s->userdata, ret);
 rs_cleanup:
 	return ret;
 }
@@ -122,7 +122,7 @@ static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option
 	handled = s->rmp(s, num, p, opts);
 	if (handled < 0)
 		mxrec_cleanup(rm_cleanup, ret, handled);
-	ret = source_after_recomm(s, s->userdata);
+	ret = source_after_recomm(s, s->userdata, handled);
 rm_cleanup:
 	return !ret ? handled : ret;
 }

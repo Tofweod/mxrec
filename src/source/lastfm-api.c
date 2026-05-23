@@ -69,9 +69,65 @@ void la_track_free(la_track *ltr)
 	u8sfree(ltr->key.name);
 	u8sfree(ltr->key.artist);
 	xfree(ltr->key.ar_mbid);
+	xfree(ltr);
 }
 
-la_track *la_track_new(const char *name, const char *artist, const char *ar_mid,
+/**
+ * la_track hash settings
+ */
+LASTFMAPI_DECL
+uint64_t fnv1a_hash(const void *data, size_t len)
+{
+	size_t i;
+	const unsigned char *p = data;
+	uint64_t h = 14695981039346656037ULL;
+
+	for (i = 0; i < len; ++i) {
+		h ^= p[i];
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+#define hash_combine(h, k) ((h) ^ ((k) + 0x9e3779b97f4a7c15ULL + ((h) << 12) + ((h) >> 4)))
+
+LASTFMAPI_DECL
+unsigned la_track_hash(const struct tr_key_t *key)
+{
+	uint64_t h;
+	h = fnv1a_hash(key->name, u8sblen(key->name));
+	h = hash_combine(h, fnv1a_hash(key->artist, u8sblen(key->artist)));
+	if (key->ar_mbid)
+		h = hash_combine(h, fnv1a_hash(key->ar_mbid, strlen(key->ar_mbid)));
+	return (unsigned)h;
+}
+
+LASTFMAPI_DECL
+int la_track_cmp(const struct tr_key_t *a, const struct tr_key_t *b)
+{
+	int ret;
+	if ((ret = u8scmp(a->name, b->name, NULL)) != 0)
+		return ret;
+	if ((ret = u8scmp(a->artist, b->artist, NULL)) != 0)
+		return ret;
+
+	if (a->ar_mbid == NULL && b->ar_mbid)
+		return 0;
+	if (a->ar_mbid == NULL)
+		return -1;
+	if (b->ar_mbid == NULL)
+		return 1;
+	ret = memcmp(a->ar_mbid, b->ar_mbid, strlen(a->ar_mbid));
+	return ret;
+}
+
+#undef HASH_FUNCTION
+#undef HASH_KEYCMP
+
+#define HASH_FUNCTION(s, len, hashv) (hashv) = la_track_hash((const struct tr_key_t *)s)
+#define HASH_KEYCMP(a, b, len) (la_track_cmp((const struct tr_key_t *)a, (const struct tr_key_t *)b))
+
+la_track *la_track_new(const char *name, const char *artist, const char *ar_mbid,
 		       unsigned long long uts)
 {
 	la_track *ltr;
@@ -79,7 +135,7 @@ la_track *la_track_new(const char *name, const char *artist, const char *ar_mid,
 	ltr = xmalloc(sizeof(*ltr));
 	ltr->key.name = u8snew(name);
 	ltr->key.artist = u8snew(artist);
-	ltr->key.ar_mbid = strdup(ar_mid);
+	ltr->key.ar_mbid = xstrdup(ar_mbid);
 
 	now = lastfmapi_now();
 
@@ -94,13 +150,12 @@ void la_track_map_cleanup(la_track *m)
 	HASH_ITER(hh, m, cur, tmp)
 	{
 #ifdef LASTFMAPI_DEBUG
-		printf("name:%s-artist:%s-ar_mid:%s-%lu\n",
+		printf("name:%s-artist:%s-ar_mbid:%s-%lu\n",
 		       cur->key.name, cur->key.artist, cur->key.ar_mbid,
 		       cur->ruts);
 #endif
 		HASH_DEL(m, cur);
 		la_track_free(cur);
-		xfree(cur);
 	}
 }
 
@@ -122,7 +177,7 @@ la_track *lastfmapi_json2latrack(yyjson_val *val, bool strict, struct json_err *
 {
 	la_track *ltr;
 	yyjson_val *jname, *jar;
-	const char *name, *ar, *ar_mid, *uts_s;
+	const char *name, *ar, *ar_mbid, *uts_s;
 	unsigned long long uts;
 
 	jname = yyjson_obj_get(val, "name");
@@ -136,8 +191,8 @@ la_track *lastfmapi_json2latrack(yyjson_val *val, bool strict, struct json_err *
 	if (ar == NULL)
 		mxrec_cleanup(cleanup, ltr, 0);
 
-	ar_mid = yyjson_get_str(yyjson_obj_get(jar, "mbid"));
-	if (ar_mid == NULL)
+	ar_mbid = yyjson_get_str(yyjson_obj_get(jar, "mbid"));
+	if (ar_mbid == NULL)
 		mxrec_cleanup(cleanup, ltr, 0);
 
 	uts_s = yyjson_get_str(yyjson_obj_get(
@@ -148,7 +203,7 @@ la_track *lastfmapi_json2latrack(yyjson_val *val, bool strict, struct json_err *
 	if (!string2ull(uts_s, &uts))
 		mxrec_cleanup(cleanup, ltr, 0);
 
-	ltr = la_track_new(name, ar, ar_mid, uts);
+	ltr = la_track_new(name, ar, ar_mbid, uts);
 cleanup:
 	return ltr;
 }
@@ -156,11 +211,12 @@ cleanup:
 int lastfmapi_jsonbuf2latrack_map(curlbuf *buf, bool strict, la_track **la_tr_map, struct json_err *jerr)
 {
 	int ret;
-	size_t i, track_size;
 	yyjson_read_err err;
 	yyjson_doc *doc;
 	yyjson_val *root, *tracks, *track;
+	yyjson_arr_iter it;
 	la_track *m, *ltr;
+	size_t m_size = 0;
 	m = NULL;
 
 	doc = yyjson_read_opts(buf->buf, buf->len,
@@ -179,10 +235,9 @@ int lastfmapi_jsonbuf2latrack_map(curlbuf *buf, bool strict, la_track **la_tr_ma
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
-	track_size = yyjson_arr_size(tracks);
-
-	yyjson_arr_foreach(tracks, i, track_size, track)
-	{
+	it = yyjson_arr_iter_with(tracks);
+	while ((track = yyjson_arr_iter_next(&it))) {
+		la_track *tmp;
 		ltr = lastfmapi_json2latrack(track, strict, jerr);
 		if (ltr == NULL) {
 			if (strict) {
@@ -191,10 +246,16 @@ int lastfmapi_jsonbuf2latrack_map(curlbuf *buf, bool strict, la_track **la_tr_ma
 			}
 			continue;
 		}
+		HASH_FIND(hh, m, &ltr->key, sizeof(struct tr_key_t), tmp);
+		if (tmp != NULL) {
+			la_track_free(ltr);
+			continue;
+		}
 		HASH_ADD(hh, m, key, sizeof(struct tr_key_t), ltr);
+		++m_size;
 	}
 
-	ret = 0;
+	ret = m_size;
 cleanup:
 	yyjson_doc_free(doc);
 	*la_tr_map = m;
@@ -427,7 +488,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	curlbuf_clear(&buf);
 
 	// TODO diffusion recommendation
-	ret = lastfmapi_diffusion_recomm(la_tr_map, p);
+	/* ret = lastfmapi_diffusion_recomm(la_tr_map, p); */
 
 cleanup:
 	la_track_map_cleanup(la_tr_map);
