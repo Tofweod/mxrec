@@ -49,6 +49,14 @@ struct da_hdr {
 		arr[hdr->len++] = item;          \
 	} while (0)
 
+#define da_append_arr(dest, src, n)                          \
+	do {                                                 \
+		dest = da_reverse(dest, n);                  \
+		struct da_hdr *hdr = DAHDR(dest);            \
+		memcpy(dest + hdr->len, src, n * hdr->size); \
+		hdr->len += n;                               \
+	} while (0)
+
 #define da_free(arr)                             \
 	do {                                     \
 		struct da_hdr *hdr = DAHDR(arr); \

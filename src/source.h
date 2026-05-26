@@ -1,7 +1,7 @@
 #ifndef TOF_MXREC_SOURCE_H
 #define TOF_MXREC_SOURCE_H
 
-#include "comm.h"
+#include "assert.h"
 #include "playlist.h"
 #include "xmalloc.h"
 #include <stdbool.h>
@@ -77,54 +77,38 @@ typedef struct source {
 
 static inline void source_clearuserdata(source *s);
 
-static inline int source_before_recomm(source *s, void *userdata)
+static inline int source_before_recomm(source *s)
 {
 	int ret = 0;
 	if (s->br) {
-		ret = s->br(s, userdata);
+		ret = s->br(s, s->userdata);
 		source_clearuserdata(s);
 	}
 	return ret;
 }
 
-static inline int source_after_recomm(source *s, void *userdata, int old)
+static inline int source_after_recomm(source *s)
 {
-	int ret = old;
+	int ret = 0;
 	if (s->ar) {
-		ret = s->ar(s, userdata);
-		source_clearuserdata(userdata);
+		ret = s->ar(s, s->userdata);
+		source_clearuserdata(s);
 	}
 	return ret;
 }
 
 static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
 {
-	int ret;
 	source *s = (source *)sp;
-	if (source_before_recomm(s, s->userdata) < 0) {
-		return -1;
-	}
-	ret = s->rsp(s, p, opts);
-	if (ret < 0)
-		mxrec_cleanup(rs_cleanup, ret, ret);
-	ret = source_after_recomm(s, s->userdata, ret);
-rs_cleanup:
-	return ret;
+	assert(s->rsp);
+	return s->rsp(s, p, opts);
 }
 
 static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option opts)
 {
-	int ret, handled;
 	source *s = (source *)sp;
-	if (source_before_recomm(s, s->userdata) < 0) {
-		return -1;
-	}
-	handled = s->rmp(s, num, p, opts);
-	if (handled < 0)
-		mxrec_cleanup(rm_cleanup, ret, handled);
-	ret = source_after_recomm(s, s->userdata, handled);
-rm_cleanup:
-	return !ret ? handled : ret;
+	assert(s->rmp);
+	return s->rmp(s, num, p, opts);
 }
 
 static inline void source_free(source *s)

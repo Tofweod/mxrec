@@ -9,7 +9,7 @@ LD_FLAGS += -L$(LIB_DIRS) -Wl,-rpath,$(ROOT_LIB)/curl-impersonate/
 LD_LIBS = -lcurl-impersonate-chrome -lm
 
 CC = gcc
-CFLAGS = -g3 -Wall
+CFLAGS = -g3 -Wall -fno-omit-frame-pointer
 
 INCLUDES = \
 	-I$(ROOT_SRC) \

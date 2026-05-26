@@ -3,12 +3,11 @@
 
 // methods of api
 #define LASTFMAPI_FORMAT "json"
-#define LASTFMAPI_USER_GETRECENTTRACKS "User.getrecenttracks"
-#define LASTFMAPI_TRACK_GETSIMILAR
-#define LASTFMAPI_ARTIST_GETSIMILAR
+#define LASTFMAPI_USER_GETRECENTTRACKS "user.getRecentTracks"
+#define LASTFMAPI_TRACK_GETSIMILAR "track.getSimilar"
+#define LASTFMAPI_ARTIST_GETSIMILAR "artist.getSimilar"
 
 #include "comm-source.h"
-
 
 typedef struct lastfmapi_source lastfmapi_source;
 
