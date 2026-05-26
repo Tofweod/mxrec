@@ -68,6 +68,7 @@ struct lastfmapi_track {
 	la_track *parent;
 	int diffusion;
 	double match;
+	bool internal, in_result;
 	UT_hash_handle rt;
 };
 
@@ -435,6 +436,7 @@ la_track *lastfmapi_json2recent_latrack(yyjson_val *val, bool strict, time_t now
 	ltr = la_track_new(name, ar, tr_mbid, ar_mbid);
 	assert(now >= uts);
 	ltr->ruts = now - uts;
+	ltr->internal = ltr->in_result = false;
 cleanup:
 	return ltr;
 }
@@ -671,7 +673,7 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 				  lastfmapi_source *ls, recomm_option opts)
 {
 	df_deque dq;
-	la_track *cur, *find, **sim_trs, **sim_ars, **total_res;
+	la_track *cur, *find, *str, *sar, **sim_trs, **sim_ars, **total_res;
 	size_t i, sim_tr_size, sim_ar_size, diff_size = 0, diff;
 
 	if (strategy == DFS_DIFF)
@@ -692,8 +694,7 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 		cur = dq.pop(&dq);
 		fprintf(stderr, "curent ltr diffusion is %d\n", cur->diffusion);
 		if (diffusion > 0 && cur->diffusion >= diffusion) {
-			/* la_track_free(cur); */
-			continue;
+			goto cleanup;
 		}
 		sim_tr_size = _lastfmapi_get_track_similar(cur, period, diff, &sim_trs, ls, opts);
 		if (!sim_tr_size && !sim_trs)
@@ -703,10 +704,12 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 			 * ltr in recent track will be kept in diffusion path
 			 * but will not be appended into result.
 			 */
-			dq.push(&dq, sim_trs[i]);
-			HASH_FIND(rt, map, &sim_trs[i]->key, sizeof(struct tr_key_t), find);
+			str = sim_trs[i];
+			dq.push(&dq, str);
+			HASH_FIND(rt, map, &str->key, sizeof(struct tr_key_t), find);
 			if (find == NULL) {
-				da_append(total_res, sim_trs[i]);
+				da_append(total_res, str);
+				str->in_result = true;
 				++_diff_size;
 			}
 		}
@@ -718,7 +721,7 @@ after_track:
 		sim_ar_size = _lastfmapi_diffusion_artist(cur, diffusion, period, diff, target,
 							  cur_num, map, &sim_ars, ls, opts);
 		if (!sim_ar_size && !sim_ars)
-			continue;
+			goto cleanup;
 		for (i = 0; i < sim_ar_size; ++i) {
 			dq.push(&dq, sim_ars[i]);
 			HASH_FIND(rt, map, &sim_ars[i]->key, sizeof(struct tr_key_t), find);
@@ -730,6 +733,10 @@ after_track:
 		diff_size += _diff_size;
 		*cur_num += _diff_size;
 		xfree(sim_ars);
+cleanup:
+		if (cur->internal && !cur->in_result) {
+			la_track_free(cur);
+		}
 	}
 	df_deque_free(&dq);
 	*res = total_res;
@@ -761,6 +768,8 @@ la_track *lastfmapi_json2similar_latrack(yyjson_val *val, bool strict, struct js
 	ltr = la_track_new(name, ar, tr_mbid, ar_mbid);
 	ltr->ruts = 0;
 	ltr->match = match;
+	ltr->internal = true;
+	ltr->in_result = false;
 cleanup:
 	return ltr;
 }
