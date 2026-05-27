@@ -911,11 +911,34 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-la_track *_lastfm_json2top_track(yyjson_val *val, bool strict, struct json_err *jerr) {}
+la_track *_lastfm_json2top_track(yyjson_val *val, bool strict, struct json_err *jerr)
+{
+	yyjson_val *ar;
+	la_track *ltr;
+	const char *name, *artist, *tr_mbid, *ar_mbid;
+	name = yyjson_get_str(yyjson_obj_get(val, "name"));
+	if (name == NULL) {
+		write_jsonerr(jerr, "failed to get field \"name\" of top track");
+		mxrec_cleanup(cleanup, ltr, 0);
+	}
+	tr_mbid = yyjson_get_str(yyjson_obj_get(val, "mbid"));
+
+	ar = yyjson_obj_get(val, "artist");
+	artist = yyjson_get_str(yyjson_obj_get(ar, "name"));
+	if (artist == NULL) {
+		write_jsonerr(jerr, "failed to get field \"artist.name\" of top track");
+		mxrec_cleanup(cleanup, ltr, 0);
+	}
+	ar_mbid = yyjson_get_str(yyjson_obj_get(ar, "mbid"));
+
+	ltr = la_track_new(name, artist, tr_mbid, ar_mbid);
+cleanup:
+	return ltr;
+}
 
 LASTFMAPI_DECL
-size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_track ***res, lastfmapi_source *ls,
-				    recomm_option opts, struct json_err *jerr)
+size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_track *parent, la_track ***res,
+				    lastfmapi_source *ls, recomm_option opts, struct json_err *jerr)
 {
 	// TODO
 	size_t i, tr_size;
@@ -932,8 +955,8 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_ARTIST_GETTOPTRACKS, 5,
 			   MAKE_KV("artist", (char *)ar->name), MAKE_KV("mbid", ar->mbid), MAKE_KV("api_key", ls->key),
 			   MAKE_KV("limit", diff_size_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
-		mxrec_cleanup(cleanup, tr_size, 0);
 		_res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
 	}
 
 	doc = yyjson_read_opts(buf.buf, buf.len, 0, 0, &err);
@@ -964,6 +987,7 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 		_res[i] = _lastfm_json2top_track(tr, opts.strict, jerr);
 		_res[i]->diffusion = ar->diffusion + 1;
 		_res[i]->match = ar->match;
+		_res[i]->parent = parent;
 	}
 
 cleanup:
@@ -974,15 +998,16 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_all_artists_top_tracks(const la_artist *ars, size_t ar_size, unsigned diff_size, la_track ***res,
-					 lastfmapi_source *ls, recomm_option opts, struct json_err *jerr)
+size_t _lastfmapi_all_artists_top_tracks(const la_artist *ars, size_t ar_size, unsigned diff_size, la_track *parent,
+					 la_track ***res, lastfmapi_source *ls, recomm_option opts,
+					 struct json_err *jerr)
 {
 	size_t i, total_size, tr_size;
 	la_track **trs, **total_res = NULL, **_res;
 	da_init(total_res, sizeof(*total_res));
 
 	for (i = 0; i < ar_size; ++i) {
-		tr_size = _lastfmapi_artist_top_tracks(&ars[i], diff_size, &trs, ls, opts, jerr);
+		tr_size = _lastfmapi_artist_top_tracks(&ars[i], diff_size, parent, &trs, ls, opts, jerr);
 		da_append_arr(total_res, trs, tr_size);
 		xfree(trs);
 	}
@@ -1033,7 +1058,7 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
 
-	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, res, ls, opts, &jerr);
+	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, ltr, res, ls, opts, &jerr);
 
 cleanup:
 	for (i = 0; i < ar_size; ++i) {
