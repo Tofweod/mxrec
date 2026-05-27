@@ -1,4 +1,4 @@
-#include "lastfm-security.h"
+#include "lastfm-comm.h"
 #include "config.h"
 #include "xmalloc.h"
 

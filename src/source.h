@@ -56,6 +56,8 @@ typedef void (*security_handle)(source *s);
 typedef int (*before_recomm)(source *s, void *userdata);
 typedef int (*after_recomm)(source *s, void *userdata);
 
+typedef bool (*config_check)(source *s);
+
 typedef struct source {
 	source_destroy destroy;
 
@@ -68,6 +70,8 @@ typedef struct source {
 	/// some sources may restrict or even ban the access,
 	/// this module is used for bypass such limitations.
 	void *security;
+
+	config_check cc;
 
 	before_recomm br;
 	after_recomm ar;
@@ -127,11 +131,19 @@ static inline void source_clearuserdata(source *s)
 	s->userdata = NULL;
 }
 
-static inline void perform_security(void *sp)
+static inline void source_perform_security(void *sp)
 {
 	source *s = (source *)sp;
 	if (s->sh)
 		s->sh(s);
+}
+
+static inline bool source_check(void *sp)
+{
+	source *s = (source *)sp;
+	if (s->cc)
+		return s->cc(s);
+	return true;
 }
 
 #define recomm_single(s, p, ...) _recomm_single((s), (p), (recomm_option){__VA_ARGS__})

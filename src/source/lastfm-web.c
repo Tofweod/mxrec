@@ -7,7 +7,7 @@
 #include "curl-impersonate.h"
 #include "da.h"
 #include "json.h"
-#include "lastfm-security.h"
+#include "lastfm-comm.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
@@ -35,6 +35,7 @@ static source __lastfmweb_source = {
 	.rsp = lastfmweb_recomm_single,
 	.rmp = lastfmweb_recomm_multi,
 	.sh = lastfmweb_security_handle,
+	.cc = lastfmweb_config_check,
 	.security = &__lastfm_security,
 };
 
@@ -72,7 +73,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	s->recomm_accept = xstrdup(cfg->lastfmweb_recomm_accept);
 	s->recomm_parameter = xstrdup(cfg->lastfmweb_recomm_parameter);
 
-	return 0;
+	return source_check(s);
 }
 
 extern int lastfmweb_source_new(source **src, config_t *cfg)
@@ -80,7 +81,7 @@ extern int lastfmweb_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmweb_source));
-	if (lastfmweb_source_init(s, cfg) < 0) {
+	if (!lastfmweb_source_init(s, cfg)) {
 		xfree(s);
 		return -1;
 	}
@@ -168,7 +169,7 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 	va_list hs;
 	size_t i;
 	if (use_security)
-		perform_security(s);
+		source_perform_security(s);
 
 	struct curl_slist *h = NULL;
 
@@ -572,4 +573,25 @@ void lastfmweb_security_handle(source *s)
 		      curl_easy_strerror(code));
 		curl_easy_reset(curl);
 	}
+}
+
+#define check(expr, val)                                                       \
+	do {                                                                   \
+		if (!(expr)) {                                                 \
+			(val) = false;                                         \
+			error("lastfm-web source init failed on %s", (#expr)); \
+		}                                                              \
+	} while (0)
+
+LASTFMWEB_DECL
+bool lastfmweb_config_check(source *s)
+{
+	bool ret;
+	lastfmweb_source *ls = (lastfmweb_source *)s;
+	check(ls->username != NULL, ret);
+	check(ls->base_url != NULL, ret);
+	check(ls->recomm_path != NULL, ret);
+	check(ls->recomm_method != NULL, ret);
+	check(ls->recomm_accept != NULL, ret);
+	return ret;
 }

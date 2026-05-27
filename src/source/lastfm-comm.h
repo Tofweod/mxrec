@@ -1,5 +1,5 @@
-#ifndef TOF_MXREC_LASTFM_SECURITY_H
-#define TOF_MXREC_LASTFM_SECURITY_H
+#ifndef TOF_MXREC_LASTFM_COMM_H
+#define TOF_MXREC_LASTFM_COMM_H
 
 typedef struct source source;
 typedef struct config_t config_t;
@@ -12,4 +12,5 @@ extern int lastfm_security_init(lastfm_security *security, config_t *cfg);
 extern void lastfm_security_free(lastfm_security *security);
 extern lastfm_security __lastfm_security;
 
+// TODO lastfm general config check
 #endif

@@ -6,6 +6,7 @@
 #define LASTFMAPI_USER_GETRECENTTRACKS "user.getRecentTracks"
 #define LASTFMAPI_TRACK_GETSIMILAR "track.getSimilar"
 #define LASTFMAPI_ARTIST_GETSIMILAR "artist.getSimilar"
+#define LASTFMAPI_ARTIST_GETTOPTRACKS "artist.getTopTracks"
 
 #include "comm-source.h"
 

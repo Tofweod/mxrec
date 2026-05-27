@@ -5,7 +5,7 @@
 #include "curl-impersonate.h"
 #include "da.h"
 #include "json.h"
-#include "lastfm-security.h"
+#include "lastfm-comm.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
@@ -26,7 +26,7 @@
 #define JSON_ERR_HEAD "LASTFMWEB"
 
 // curlbuf
-#define BUF_DEFAULT_CAP (1024)
+#define CURLBUF_DEFAULT_CAP (1024)
 BUFFERBUILDER_INIT(LASTFMAPI_DECL, curlbuf, curlbuf, void);
 
 LASTFMAPI_DECL
@@ -53,9 +53,34 @@ time_t lastfmapi_now(void)
 	return now_time;
 }
 
+typedef struct lastfmapi_artist {
+	u8s name;
+	char *mbid;
+	double match;
+	unsigned diffusion;
+} la_artist;
+
+LASTFMAPI_DECL
+void la_artist_init(la_artist *lar, const char *name, const char *mbid, double match)
+{
+	if (lar == NULL)
+		return;
+	lar->name = u8snew(name);
+	lar->mbid = xstrdup(mbid);
+	lar->match = match;
+}
+
+LASTFMAPI_DECL
+void la_artist_cleanup(la_artist *lar)
+{
+	if (lar == NULL)
+		return;
+	u8sfree(lar->name);
+	xfree(lar->mbid);
+}
+
 typedef struct lastfmapi_track la_track;
 struct lastfmapi_track {
-	double score;
 	struct tr_key_t {
 		u8s name;
 		u8s artist;
@@ -63,13 +88,14 @@ struct lastfmapi_track {
 		char *ar_mbid;
 		char *tr_mbid;
 	} key;
-	time_t ruts;
 	// used for tracing diffusion
+	double score;
+	time_t ruts;
 	la_track *parent;
 	int diffusion;
 	double match;
 	bool internal, in_result;
-	UT_hash_handle rt;
+	UT_hash_handle hh;
 };
 
 LASTFMAPI_DECL
@@ -182,12 +208,12 @@ void la_track_map_cleanup(la_track *hm)
 		return;
 	la_track *cur, *tmp;
 	fprintf(stderr, "recent hash map is\n");
-	HASH_ITER(rt, hm, cur, tmp)
+	HASH_ITER(hh, hm, cur, tmp)
 	{
 #ifdef LASTFMAPI_DEBUG
 		la_track_dump(stderr, cur);
 #endif
-		HASH_DELETE(rt, hm, cur);
+		HASH_DELETE(hh, hm, cur);
 		la_track_free(cur);
 	}
 }
@@ -199,10 +225,9 @@ int lastfmapi_latrack2playitem()
 }
 
 // core: diffusion recommendation recursively
-// TODO
 typedef enum diffusion_strategy {
-	BFS_DIFF,
-	DFS_DIFF,
+	DIFFUSION_BFS,
+	DIFFUSION_DFS,
 } diffusion_strategy;
 
 // data structure of dfs and bfs strategy diffusion
@@ -320,38 +345,38 @@ diffusion_strategy str2strategy(const char *s)
 	if (s == NULL)
 		mxrec_cleanup(err, err_strategy, "NULL");
 	if (strcmp(s, "bfs") == 0)
-		return BFS_DIFF;
+		return DIFFUSION_BFS;
 	else if (strcmp(s, "dfs") == 0)
-		return DFS_DIFF;
+		return DIFFUSION_DFS;
 	else
 		mxrec_cleanup(err, err_strategy, s);
 err:
 	error("failed to convert %s into diffusion_strategy,"
 	      "using default dfs",
 	      err_strategy);
-	return DFS_DIFF;
+	return DIFFUSION_DFS;
 }
 
 LASTFMAPI_DECL
-int la_track_score_cmp(const la_track *a, const la_track *b)
+int la_track_score_cmp(const void *a, const void *b)
 {
-	if (a->score == b->score)
-		return la_track_cmp(&a->key, &b->key);
-	return a->score > b->score ? -1 : 1;
+	const la_track *la = *(const la_track *const *)a;
+	const la_track *lb = *(const la_track *const *)b;
+	if (la->score == lb->score)
+		return la_track_cmp(&la->key, &lb->key);
+	return la->score > lb->score ? -1 : 1;
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_get_track_similar(la_track *ltr, time_t period, unsigned diff_size, la_track ***res,
+size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track ***res,
 				    lastfmapi_source *ls, recomm_option opts);
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, time_t period,
-				   unsigned diff, size_t target, size_t *cur_num,
+size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, unsigned diff, size_t target, size_t *cur_num,
 				   const la_track *map, la_track ***res,
 				   lastfmapi_source *ls, recomm_option opts);
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
-				  size_t target, size_t *cur_num,
+size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
 				  diffusion_strategy strategy, const la_track *map, la_track ***res,
 				  lastfmapi_source *ls, recomm_option opts);
 
@@ -365,9 +390,10 @@ void _lastfmapi_diffusion_core(diffusion_strategy strategy, int diffusion, time_
 	la_track *cur, **res, **child;
 	res = NULL;
 	da_init(res, sizeof(*res));
-	for (i = 0, cur = map; cur; cur = cur->rt.next, ++i) {
-		child_size = _lastfmapi_diffusion_track(cur, diffusion, period,
-							target, cur_num, strategy, map, &child, ls, opts);
+	// TODO Top N diffusion or RANDOM
+	for (i = 0, cur = map; cur && i < target; cur = cur->hh.next, ++i) {
+		child_size = _lastfmapi_diffusion_track(cur, diffusion, target, cur_num, strategy,
+							map, &child, ls, opts);
 		if (!child_size)
 			goto cleanup_child;
 		da_append_arr(res, child, child_size);
@@ -393,13 +419,11 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusi
 			       la_track *map, playlist *p, int diffusion, time_t period, size_t target)
 {
 	size_t cur_num = 0;
-	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(rt, map));
+#ifdef LASTFMAPI_DEBUG
+	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(hh, map));
+#endif
 	_lastfmapi_diffusion_core(strategy, diffusion, period, target,
 				  &cur_num, map, p, ls, opts);
-	/*
-	 * TODO split tracks in hashmap and generated by similar method,
-	 * and free pointers
-	 */
 	return cur_num;
 }
 
@@ -464,7 +488,7 @@ int lastfmapi_jsonbuf2recent_latrack_map(curlbuf *buf, bool strict, la_track **m
 
 	root = yyjson_doc_get_root(doc);
 	tracks = yyjson_obj_get(yyjson_obj_get(root, "recenttracks"), "track");
-	if (tracks == NULL || !yyjson_is_arr(tracks)) {
+	if (!yyjson_is_arr(tracks)) {
 		write_jsonerr(jerr, "[%s]: failed to parse field \".recenttracks.track\" into array",
 			      JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ret, -1);
@@ -482,16 +506,16 @@ int lastfmapi_jsonbuf2recent_latrack_map(curlbuf *buf, bool strict, la_track **m
 			}
 			continue;
 		}
-		HASH_FIND(rt, hm, &ltr->key, sizeof(struct tr_key_t), find);
+		HASH_FIND(hh, hm, &ltr->key, sizeof(struct tr_key_t), find);
 		if (find != NULL) {
 			la_track_free(ltr);
 			continue;
 		}
-		HASH_ADD(rt, hm, key, sizeof(struct tr_key_t), ltr);
+		HASH_ADD(hh, hm, key, sizeof(struct tr_key_t), ltr);
 		++m_size;
 	}
 	// sort hash map with ruts firstly. (refer to la_track_map_cmp)
-	HASH_SRT(rt, hm, la_track_map_cmp);
+	HASH_SRT(hh, hm, la_track_map_cmp);
 
 	ret = m_size;
 cleanup:
@@ -505,6 +529,7 @@ static source __lastfmapi_source = {
 	.rsp = lastfmapi_recomm_single,
 	.rmp = lastfmapi_recomm_multi,
 	.sh = lastfmapi_security_handle,
+	.cc = lastfmapi_config_check,
 	.security = &__lastfm_security,
 };
 
@@ -517,8 +542,7 @@ struct lastfmapi_source {
 	char *key;
 	char *period;
 	/**
-	 * If diffusion is 0, it will automatically diffuse till reaching target number.
-	 * Else diffusion should be positive, representing the maximum diffusion level.
+	 * Diffusion should be positive, representing the maximum diffusion level.
 	 */
 	unsigned diffusion;
 	unsigned diff_size;
@@ -641,16 +665,17 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	s->curl = curl_easy_init();
 	if (s->curl == NULL)
 		return -1;
-	perform_security(s);
+	source_perform_security(s);
 
 	s->username = u8sdup(cfg->lastfm_username);
 	s->base_url = xstrdup(cfg->lastfmapi_base_url);
 	s->key = xstrdup(cfg->lastfmapi_key);
 	s->period = xstrdup(cfg->lastfmapi_period);
 	s->diffusion = cfg->lastfmapi_diffusion_level;
+	assert(s->diffusion > 0);
 	s->diff_size = cfg->lastfmapi_diffusion_size;
 	s->strategy = str2strategy(cfg->lastfmapi_strategy);
-	return 0;
+	return source_check(s);
 }
 
 extern int lastfmapi_source_new(source **src, config_t *cfg)
@@ -658,7 +683,7 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmapi_source));
-	if (lastfmapi_source_init(s, cfg) < 0) {
+	if (!lastfmapi_source_init(s, cfg)) {
 		xfree(s);
 		return -1;
 	}
@@ -667,8 +692,7 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
-				  size_t target, size_t *cur_num,
+size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
 				  diffusion_strategy strategy, const la_track *map, la_track ***res,
 				  lastfmapi_source *ls, recomm_option opts)
 {
@@ -676,7 +700,7 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 	la_track *cur, *find, *str, *sar, **sim_trs, **sim_ars, **total_res;
 	size_t i, sim_tr_size, sim_ar_size, diff_size = 0, diff;
 
-	if (strategy == DFS_DIFF)
+	if (strategy == DIFFUSION_DFS)
 		dq = df_stack;
 	else
 		dq = df_queue;
@@ -687,16 +711,18 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 	diff = ls->diff_size;
 
 	while (!df_deque_empty(&dq)) {
+#ifdef LASTFMAPI_DEBUG
 		fprintf(stderr, "current dq size:%zu\n", dq.size);
-		if (diffusion == 0 && *cur_num > target)
-			break;
+#endif
 		size_t _diff_size = 0;
 		cur = dq.pop(&dq);
+#ifdef LASTFMAPI_DEBUG
 		fprintf(stderr, "curent ltr diffusion is %d\n", cur->diffusion);
-		if (diffusion > 0 && cur->diffusion >= diffusion) {
+#endif
+		if (cur->diffusion >= diffusion) {
 			goto cleanup;
 		}
-		sim_tr_size = _lastfmapi_get_track_similar(cur, period, diff, &sim_trs, ls, opts);
+		sim_tr_size = _lastfmapi_get_track_similar(cur, diff, &sim_trs, ls, opts);
 		if (!sim_tr_size && !sim_trs)
 			goto after_track;
 		for (i = 0; i < sim_tr_size; ++i) {
@@ -706,7 +732,7 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 			 */
 			str = sim_trs[i];
 			dq.push(&dq, str);
-			HASH_FIND(rt, map, &str->key, sizeof(struct tr_key_t), find);
+			HASH_FIND(hh, map, &str->key, sizeof(struct tr_key_t), find);
 			if (find == NULL) {
 				da_append(total_res, str);
 				str->in_result = true;
@@ -718,15 +744,17 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, time_t period,
 		xfree(sim_trs);
 after_track:
 		_diff_size = 0;
-		sim_ar_size = _lastfmapi_diffusion_artist(cur, diffusion, period, diff, target,
-							  cur_num, map, &sim_ars, ls, opts);
+		sim_ar_size = _lastfmapi_diffusion_artist(cur, diffusion, diff, target, cur_num,
+							  map, &sim_ars, ls, opts);
 		if (!sim_ar_size && !sim_ars)
 			goto cleanup;
 		for (i = 0; i < sim_ar_size; ++i) {
-			dq.push(&dq, sim_ars[i]);
-			HASH_FIND(rt, map, &sim_ars[i]->key, sizeof(struct tr_key_t), find);
+			sar = sim_ars[i];
+			dq.push(&dq, sar);
+			HASH_FIND(hh, map, &sar->key, sizeof(struct tr_key_t), find);
 			if (find == NULL) {
-				da_append(total_res, sim_ars[i]);
+				da_append(total_res, sar);
+				sar->in_result = true;
 				++_diff_size;
 			}
 		}
@@ -775,7 +803,7 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_get_track_similar(la_track *ltr, time_t period, unsigned diff_size,
+size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size,
 				    la_track ***res, lastfmapi_source *ls, recomm_option opts)
 {
 	size_t i, track_size;
@@ -786,7 +814,7 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, time_t period, unsigned diff_
 	struct json_err jerr;
 	jerr.length = 0;
 	curlbuf buf;
-	curlbuf_init(&buf, BUF_DEFAULT_CAP);
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	char diff_size_s[sizeof(diff_size) + 1];
 	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
 
@@ -803,13 +831,19 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, time_t period, unsigned diff_
 	}
 	doc = yyjson_read_opts(buf.buf, buf.len, 0, NULL, &err);
 	if (doc == NULL) {
-		// TODO
+		write_jsonerr(&jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		_res = NULL;
+		mxrec_cleanup(cleanup, track_size, 0);
 	}
 
 	root = yyjson_doc_get_root(doc);
 
 	tracks = yyjson_obj_get(yyjson_obj_get(root, "similartracks"), "track");
+	// track.getsimilar will return 200 OK HTTP status code on error
 	if (!yyjson_is_arr(tracks)) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, track_size, 0);
 	}
 	track_size = yyjson_arr_size(tracks);
 	if (track_size == 0) {
@@ -833,40 +867,213 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, time_t period,
-				   unsigned diff, size_t target, size_t *cur_num,
+la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_err *jerr)
+{
+	la_artist lar = {0};
+	const char *name, *mbid;
+	double match;
+
+	name = yyjson_get_str(yyjson_obj_get(val, "name"));
+	if (name == NULL)
+		write_jsonerr(jerr, "failed to get field \"name\" of artist");
+
+	mbid = yyjson_get_str(yyjson_obj_get(val, "mbid"));
+	if (mbid == NULL)
+		write_jsonerr(jerr, "failed to get field \"mbid\" of artist");
+
+	match = yyjson_get_num(yyjson_obj_get(val, "match"));
+
+	la_artist_init(&lar, name, mbid, match);
+	return lar;
+}
+
+LASTFMAPI_DECL
+size_t _lastfmapi_jsonbuf2sim_artists(curlbuf *buf, unsigned diffusion, bool strict, la_artist **res, struct json_err *jerr)
+{
+	size_t i, ar_size;
+	la_artist *_res = NULL;
+	yyjson_doc *doc;
+	yyjson_read_err err;
+	yyjson_val *root, *ars, *ar;
+
+	doc = yyjson_read_opts(buf->buf, buf->len, 0, NULL, &err);
+	if (doc == NULL) {
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		_res = NULL;
+		mxrec_cleanup(cleanup, ar_size, 0);
+	}
+
+	root = yyjson_doc_get_root(doc);
+	ars = yyjson_obj_get(yyjson_obj_get(root, "similarartists"), "artist");
+	// artist.getsimilar will return 200 OK HTTP status code on error
+	if (!yyjson_is_arr(ars)) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, ar_size, 0);
+	}
+
+	ar_size = yyjson_arr_size(ars);
+	if (ar_size == 0) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, ar_size, 0);
+	}
+
+	_res = xmalloc(ar_size * sizeof(*_res));
+	yyjson_arr_foreach(ars, i, ar_size, ar)
+	{
+		_res[i] = _lastfmapi_json2sim_artist(ar, strict, jerr);
+		_res[i].diffusion = diffusion + 1;
+	}
+
+cleanup:
+	*res = _res;
+	yyjson_doc_free(doc);
+	return ar_size;
+}
+
+LASTFMAPI_DECL
+la_track *_lastfm_json2top_track(yyjson_val *val, bool strict, struct json_err *jerr)
+{
+}
+
+LASTFMAPI_DECL
+size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size,
+				    la_track ***res, lastfmapi_source *ls, recomm_option opts, struct json_err *jerr)
+{
+	// TODO
+	size_t i, tr_size;
+	la_track **_res = NULL;
+	char diff_size_s[sizeof(diff_size) + 1];
+	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
+	curlbuf buf;
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
+
+	yyjson_doc *doc = NULL;
+	yyjson_read_err err;
+	yyjson_val *root, *tracks, *tr;
+
+	if (lastfmapi_curl(&buf, ls->curl, ls->base_url,
+			   LASTFMAPI_ARTIST_GETTOPTRACKS, 5,
+			   MAKE_KV("artist", (char *)ar->name),
+			   MAKE_KV("mbid", ar->mbid),
+			   MAKE_KV("api_key", ls->key),
+			   MAKE_KV("limit", diff_size_s),
+			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
+		mxrec_cleanup(cleanup, tr_size, 0);
+		_res = NULL;
+	}
+
+	doc = yyjson_read_opts(buf.buf, buf.len, 0, 0, &err);
+	if (doc == NULL) {
+		write_jsonerr(&jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
+			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		_res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
+	}
+
+	root = yyjson_doc_get_root(doc);
+	tracks = yyjson_obj_get(yyjson_obj_get(root, "toptracks"), "track");
+
+	// artist.gettoptracks will return 200 OK HTTP status code on error
+	if (yyjson_is_arr(tracks)) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
+	}
+	tr_size = yyjson_arr_size(tracks);
+	if (tr_size == 0) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
+	}
+
+	_res = xmalloc(tr_size * sizeof(*_res));
+	yyjson_arr_foreach(tracks, i, tr_size, tr)
+	{
+		_res[i] = _lastfm_json2top_track(tr, opts.strict, jerr);
+		_res[i]->diffusion = ar->diffusion + 1;
+		_res[i]->match = ar->match;
+	}
+
+cleanup:
+	*res = _res;
+	yyjson_doc_free(doc);
+	curlbuf_free(&buf);
+	return tr_size;
+}
+
+LASTFMAPI_DECL
+size_t _lastfmapi_all_artists_top_tracks(const la_artist *ars, size_t ar_size, unsigned diff_size,
+					 la_track ***res, lastfmapi_source *ls, recomm_option opts, struct json_err *jerr)
+{
+	size_t i, total_size, tr_size;
+	la_track **trs, **total_res = NULL, **_res;
+	da_init(total_res, sizeof(*total_res));
+
+	for (i = 0; i < ar_size; ++i) {
+		tr_size = _lastfmapi_artist_top_tracks(&ars[i], diff_size, &trs, ls, opts, jerr);
+		da_append_arr(total_res, trs, tr_size);
+		xfree(trs);
+	}
+
+	total_size = da_len(total_res);
+	if (total_size == 0) {
+		_res = NULL;
+		mxrec_cleanup(cleanup, total_size, 0);
+	}
+
+	_res = xmalloc(total_size * sizeof(*_res));
+	memcpy(_res, total_res, total_size);
+cleanup:
+	da_free(total_res);
+	*res = _res;
+	return total_size;
+}
+
+LASTFMAPI_DECL
+size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion,
+				   unsigned diff_size, size_t target, size_t *cur_num,
 				   const la_track *map, la_track ***res,
 				   lastfmapi_source *ls, recomm_option opts)
 {
-	// TODO
-#if 0
-	size_t i, track_size;
-	la_track **_res = NULL;
-	yyjson_read_err err;
-	yyjson_doc *doc;
-	yyjson_val *root, *tracks, *track;
+	size_t i, ar_size = 0, tr_size;
+	la_artist *ars = NULL;
+	curlbuf buf;
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
+	char diff_size_s[sizeof(diff_size) + 1];
+	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
 	struct json_err jerr;
 	jerr.length = 0;
-	curlbuf buf;
-	curlbuf_init(&buf, BUF_DEFAULT_CAP);
-	char diff_size_s[sizeof(diff) + 1];
-	ull2string(diff_size_s, sizeof(diff) + 1, diff);
 
-	if (lastfmapi_curl((source *)ls, &buf, ls->curl,
-			   opts.use_security, ls->base_url,
-			   LASTFMAPI_TRACK_GETSIMILAR, 6,
+	if (ltr->diffusion >= diffusion - 1) {
+		*res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
+	}
+
+	if (lastfmapi_curl(&buf, ls->curl, ls->base_url,
+			   LASTFMAPI_ARTIST_GETSIMILAR, 5,
 			   MAKE_KV("artist", (char *)ltr->key.artist),
-			   MAKE_KV("track", (char *)ltr->key.name),
 			   MAKE_KV("mbid", (char *)ltr->key.ar_mbid),
 			   MAKE_KV("api_key", ls->key),
 			   MAKE_KV("limit", diff_size_s),
 			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
-		mxrec_cleanup(cleanup, track_size, 0);
+		*res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
 	}
+
+	ar_size = _lastfmapi_jsonbuf2sim_artists(&buf, ltr->diffusion, opts.strict, &ars, &jerr);
+	if (!ar_size && !ars) {
+		*res = NULL;
+		mxrec_cleanup(cleanup, tr_size, 0);
+	}
+
+	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, res, ls, opts, &jerr);
+
 cleanup:
-#endif
-	*res = NULL;
-	return 0;
+	for (i = 0; i < ar_size; ++i) {
+		la_artist_cleanup(&ars[i]);
+	}
+	xfree(ars);
+	curlbuf_free(&buf);
+	return tr_size;
 }
 
 // interface implement
@@ -886,6 +1093,7 @@ LASTFMAPI_DECL
 int lastfmapi_recomm_single(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
+	return 0;
 }
 
 LASTFMAPI_DECL
@@ -899,7 +1107,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	struct json_err jerr;
 	jerr.length = 0;
 
-	curlbuf_init(&buf, BUF_DEFAULT_CAP);
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	assert(p);
 	if (opts.level == RECOMM_FULL) {
 		panic("lastfm api source don't support full level recommendation in recomm_multi");
@@ -907,11 +1115,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
 
-	/**
-	 * diffusion on target number of recent tracks,
-	 * containing repeated tracks for the total recent tracks
-	 * may be smaller than target number.
-	 */
+	// TODO get period, here simply use limit for debug
 	size_t limit = num;
 	char limit_str[sizeof(limit) + 1];
 	size_t str_len = ull2string(limit_str, sizeof(limit) + 1, limit);
@@ -938,7 +1142,6 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	}
 	curlbuf_clear(&buf);
 
-	// TODO get period
 	ret = lastfmapi_diffusion_recomm(ls, opts, ls->strategy, la_tr_map, p,
 					 ls->diffusion, period, num);
 
@@ -962,4 +1165,26 @@ void lastfmapi_security_handle(source *s)
 		      curl_easy_strerror(code));
 		curl_easy_reset(curl);
 	}
+}
+
+#define check(expr, val)                                                       \
+	do {                                                                   \
+		if (!(expr)) {                                                 \
+			(val) = false;                                         \
+			error("lastfm-web source init failed on %s", (#expr)); \
+		}                                                              \
+	} while (0)
+
+LASTFMAPI_DECL
+bool lastfmapi_config_check(source *s)
+{
+	bool ret = true;
+	lastfmapi_source *ls = (lastfmapi_source *)s;
+	check(ls->username != NULL, ret);
+	check(ls->base_url != NULL, ret);
+	check(ls->key != NULL, ret);
+	check(ls->period != NULL, ret);
+	check(ls->diffusion > 0, ret);
+	check(ls->diff_size > 0, ret);
+	return ret;
 }

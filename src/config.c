@@ -11,27 +11,6 @@
 
 #define PACKAGE "mxrec"
 
-static int config_check(config_t *cfg)
-{
-	bool ret = true;
-#define cfg_check(name)                                        \
-	do                                                     \
-		if (cfg->name == NULL) {                       \
-			error("%s has not be setted.", #name); \
-			ret = false;                           \
-		}                                              \
-	while (0)
-
-	// TODO
-	cfg_check(lastfmweb_base_url);
-	cfg_check(lastfm_username);
-	cfg_check(lastfmweb_recomm_path);
-
-	cfg_check(ncm_cookie);
-
-	return ret;
-}
-
 static void removeURLEndSlash(char *url)
 {
 	size_t len = strlen(url);
@@ -50,7 +29,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 		return false;
 	}
 
-	// TODO
+	// TODO set default value here
 	// general
 	cfg->timeout = iniparser_getuint64(d, "general:timeout", 500);
 	cfg->max_try = iniparser_getuint64(d, "general:max-try", 3);
@@ -84,7 +63,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 
 	iniparser_freedict(d);
 
-	return config_check(cfg);
+	return true;
 }
 
 bool load_config(const char *filename, config_t *cfg)
