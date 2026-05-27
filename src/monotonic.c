@@ -1,5 +1,5 @@
-#include "assert.h"
 #include "monotonic.h"
+#include "assert.h"
 #include <curl/curl.h>
 #include <stdbool.h>
 

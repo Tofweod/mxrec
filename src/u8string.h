@@ -3,10 +3,9 @@
 
 /**
  * utf8 string, which is the wrapper of utf8proc library.
- * utf8 string is stored in u8 char while a single character is consists of multi u8 chars.
- * the character of utf8 string corresponds to `codepoint`, a int32 number
- * encoding a single character.
- * Thus, utf8 string has two lenghts:
+ * utf8 string is stored in u8 char while a single character is consists of
+ * multi u8 chars. the character of utf8 string corresponds to `codepoint`, a
+ * int32 number encoding a single character. Thus, utf8 string has two lenghts:
  * - storage size of byte length(u8sblen)
  *   We use typical size_t to represent byte length, as it is just u8 char
  *   stream. The specifiaction guarentees that utf8 string is end of '\0'.
@@ -15,8 +14,8 @@
  *   **NOTE: this is Unicode character length, at the level of code point,
  *   NOT grapheme cluster that is at the visible character level.**
  *
- * All utf8 string is initialized with normalization. The normalization standards
- * are as below:
+ * All utf8 string is initialized with normalization. The normalization
+ * standards are as below:
  * - NFC
  * - NFD
  * - NFKD
@@ -55,22 +54,22 @@ typedef utf8proc_ssize_t u8s_ssize_t;
 typedef utf8proc_property_t u8s_property;
 
 typedef enum {
-#define U8S_OPTION_LIST       \
-	U8S_OPTION(NULLTERM)  \
-	U8S_OPTION(STABLE)    \
-	U8S_OPTION(COMPAT)    \
-	U8S_OPTION(COMPOSE)   \
-	U8S_OPTION(DECOMPOSE) \
-	U8S_OPTION(IGNORE)    \
-	U8S_OPTION(REJECTNA)  \
-	U8S_OPTION(NLF2LS)    \
-	U8S_OPTION(NLF2PS)    \
-	U8S_OPTION(NLF2LF)    \
-	U8S_OPTION(STRIPCC)   \
-	U8S_OPTION(CASEFOLD)  \
-	U8S_OPTION(CHARBOUND) \
-	U8S_OPTION(LUMP)      \
-	U8S_OPTION(STRIPMARK) \
+#define U8S_OPTION_LIST                                                                                                \
+	U8S_OPTION(NULLTERM)                                                                                           \
+	U8S_OPTION(STABLE)                                                                                             \
+	U8S_OPTION(COMPAT)                                                                                             \
+	U8S_OPTION(COMPOSE)                                                                                            \
+	U8S_OPTION(DECOMPOSE)                                                                                          \
+	U8S_OPTION(IGNORE)                                                                                             \
+	U8S_OPTION(REJECTNA)                                                                                           \
+	U8S_OPTION(NLF2LS)                                                                                             \
+	U8S_OPTION(NLF2PS)                                                                                             \
+	U8S_OPTION(NLF2LF)                                                                                             \
+	U8S_OPTION(STRIPCC)                                                                                            \
+	U8S_OPTION(CASEFOLD)                                                                                           \
+	U8S_OPTION(CHARBOUND)                                                                                          \
+	U8S_OPTION(LUMP)                                                                                               \
+	U8S_OPTION(STRIPMARK)                                                                                          \
 	U8S_OPTION(STRIPNA)
 
 #define U8S_OPTION(type) U8S_##type = UTF8PROC_##type,
@@ -90,10 +89,7 @@ typedef enum {
 
 extern u8s_norm_t default_norm_type;
 
-static inline void u8snormtype(u8s_norm_t type)
-{
-	default_norm_type = type;
-}
+static inline void u8snormtype(u8s_norm_t type) { default_norm_type = type; }
 
 // character length, slowly
 u8s_size_t u8slen(const u8s s);
@@ -114,9 +110,8 @@ u8s u8sexpandzero(u8s s, size_t len);
 /**
  * u8s operated such as cat, cpy will simply use memory operations in stdlib.h
  * And it just change raw data without normalization.
- * Thus the type field of is no longer valid and the valid_type field is set to 0,
- * until explicit calling `u8snormalize`.
- * Return NULL on error.
+ * Thus the type field of is no longer valid and the valid_type field is set to
+ * 0, until explicit calling `u8snormalize`. Return NULL on error.
  */
 // cat with binary-safe string pointed by 't' of 'len' bytes
 u8s u8scatlen(u8s s, const void *t, size_t len);
@@ -131,8 +126,7 @@ u8s u8scpyu8s(u8s s, const u8s t);
 
 u8s u8scatvprintf(u8s s, const char *fmt, va_list ap);
 #ifdef __GNUC__
-u8s u8scatprintf(u8s s, const char *fmt, ...)
-	__attribute__((format(printf, 2, 3)));
+u8s u8scatprintf(u8s s, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 #else
 u8s u8scatprintf(u8s s, const char *fmt, ...);
 #endif
@@ -172,10 +166,12 @@ int u8sneedsrepr(const u8s s);
  * Return a new u8s operated by opts, src maintains unchanged.
  *
  * The implement of this function is based on
- * utf8proc_ssize_t utf8proc_map( const utf8proc_uint8_t *str, utf8proc_ssize_t strlen, utf8proc_uint8_t **dstptr, utf8proc_option_t options );
+ * utf8proc_ssize_t utf8proc_map( const utf8proc_uint8_t *str, utf8proc_ssize_t
+ * strlen, utf8proc_uint8_t **dstptr, utf8proc_option_t options );
  *
  * I am not sure what will happen if strlen is smaller than strlen(str) without
- * UTF8PROC_NULLTERM flag, so here `srclen` is simply passed into `strlen` of utf8proc_map
+ * UTF8PROC_NULLTERM flag, so here `srclen` is simply passed into `strlen` of
+ * utf8proc_map
  */
 u8s u8s_proc(const u8s src, u8s_ssize_t srclen, u8s_option_t opts, int *result);
 

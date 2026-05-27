@@ -49,10 +49,7 @@ u8s_size_t u8slen(const u8s s)
 	return n;
 }
 
-size_t u8sblen(const u8s s)
-{
-	return U8S_HDR(s)->len;
-}
+size_t u8sblen(const u8s s) { return U8S_HDR(s)->len; }
 
 static inline size_t u8savail(const u8s s)
 {
@@ -63,10 +60,10 @@ static inline size_t u8savail(const u8s s)
 // static auxiliary functions
 #define u8s_set(s, field, val) (U8S_HDR((s))->field = (val))
 #define u8s_get(s, field) (U8S_HDR((s))->field)
-#define u8s_set_result(res, code)        \
-	do                               \
-		if ((res))               \
-			*(res) = (code); \
+#define u8s_set_result(res, code)                                                                                      \
+	do                                                                                                             \
+		if ((res))                                                                                             \
+			*(res) = (code);                                                                               \
 	while (0)
 
 static inline u8s_norm_t u8soption2normtype(u8s_option_t type)
@@ -112,8 +109,7 @@ static inline u8s _u8snewlen(const void *init, size_t len)
 	assert(len + hdrlen + 1 > len);
 
 	// normalize
-	reallen = utf8proc_map(init, len, &s,
-			       (utf8proc_option_t)u8snormtype2option(default_norm_type));
+	reallen = utf8proc_map(init, len, &s, (utf8proc_option_t)u8snormtype2option(default_norm_type));
 
 	if (reallen < 0)
 		mxrec_cleanup(cleanup, ret, 0);
@@ -165,8 +161,7 @@ static inline int _u8scmpNorm(const u8s s1, const u8s s2, int *result)
 	}
 	// convert s2 into s1' normalization
 	else {
-		ret = utf8proc_map(s2, l2, &ns,
-				   (utf8proc_option_t)u8snormtype2option(h1->type));
+		ret = utf8proc_map(s2, l2, &ns, (utf8proc_option_t)u8snormtype2option(h1->type));
 		if (ret < 0) {
 			error("Normalizing u8s failed:%s", s2);
 			u8s_set_result(result, U8S_ERR_NORM);
@@ -209,10 +204,7 @@ void u8ssetblen(u8s s, size_t len)
 	u8s_set(s, len, len);
 }
 
-u8s u8snewlen(const void *init, size_t len)
-{
-	return _u8snewlen(init, len);
-}
+u8s u8snewlen(const void *init, size_t len) { return _u8snewlen(init, len); }
 
 u8s u8snew(const char *init)
 {
@@ -242,15 +234,9 @@ u8s u8snewplacement(void *buf, size_t bufsize, const u8s init, size_t len, u8s_n
 	return s;
 }
 
-u8s u8sempty(void)
-{
-	return u8snewlen("", 0);
-}
+u8s u8sempty(void) { return u8snewlen("", 0); }
 
-u8s u8sdup(const u8s s)
-{
-	return u8snewlen(s, u8sblen(s));
-}
+u8s u8sdup(const u8s s) { return u8snewlen(s, u8sblen(s)); }
 
 void u8sfree(u8s s)
 {
@@ -305,8 +291,7 @@ int u8snormalize(u8s *s, u8s_norm_t type)
 	int result = U8S_OK;
 
 	u8s new_s, old_s = *s;
-	new_s = u8s_proc(old_s, u8sblen(old_s),
-			 u8snormtype2option(type), &result);
+	new_s = u8s_proc(old_s, u8sblen(old_s), u8snormtype2option(type), &result);
 	u8sfree(old_s);
 	*s = new_s;
 	u8s_set(*s, valid_type, 1);
@@ -386,25 +371,13 @@ void u8strim(u8s s, const u8s cset)
 	// TODO
 }
 
-u8s u8scat(u8s s, const char *t)
-{
-	return u8scatlen(s, t, strlen(t));
-}
+u8s u8scat(u8s s, const char *t) { return u8scatlen(s, t, strlen(t)); }
 
-u8s u8scatu8s(u8s s, const u8s t)
-{
-	return u8scatlen(s, t, u8sblen(t));
-}
+u8s u8scatu8s(u8s s, const u8s t) { return u8scatlen(s, t, u8sblen(t)); }
 
-u8s u8scpy(u8s s, const char *t)
-{
-	return u8scpylen(s, t, strlen(t));
-}
+u8s u8scpy(u8s s, const char *t) { return u8scpylen(s, t, strlen(t)); }
 
-u8s u8scpyu8s(u8s s, const u8s t)
-{
-	return u8scpylen(s, t, u8sblen(t));
-}
+u8s u8scpyu8s(u8s s, const u8s t) { return u8scpylen(s, t, u8sblen(t)); }
 
 u8s u8scatvprintf(u8s s, const char *fmt, va_list ap)
 {
@@ -495,8 +468,7 @@ int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type)
 		return 0;
 	}
 	if (h1->valid_type == 0) {
-		ns1 = u8s_proc(s1, u8sblen(s1),
-			       u8snormtype2option(cur_type), result);
+		ns1 = u8s_proc(s1, u8sblen(s1), u8snormtype2option(cur_type), result);
 		n1 = true;
 		if (ns1 == NULL)
 			goto err;
@@ -504,8 +476,7 @@ int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type)
 		ns1 = s1;
 	}
 	if (h2->valid_type == 0) {
-		ns2 = u8s_proc(s2, u8sblen(s2),
-			       u8snormtype2option(cur_type), result);
+		ns2 = u8s_proc(s2, u8sblen(s2), u8snormtype2option(cur_type), result);
 		n2 = true;
 		if (ns1 == NULL)
 			goto err;

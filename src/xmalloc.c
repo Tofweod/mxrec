@@ -25,8 +25,7 @@
 
 #define fatalx(msg, ...) panic(msg, #__VA_ARGS__)
 
-void *
-xmalloc(size_t size)
+void *xmalloc(size_t size)
 {
 	void *ptr;
 
@@ -34,8 +33,7 @@ xmalloc(size_t size)
 		fatalx("xmalloc: zero size");
 	ptr = malloc(size);
 	if (ptr == NULL)
-		fatalx("xmalloc: allocating %zu bytes: %s",
-		       size, strerror(errno));
+		fatalx("xmalloc: allocating %zu bytes: %s", size, strerror(errno));
 	return ptr;
 }
 
@@ -46,8 +44,7 @@ void xfree(void *ptr)
 	free(ptr);
 }
 
-void *
-xcalloc(size_t nmemb, size_t size)
+void *xcalloc(size_t nmemb, size_t size)
 {
 	void *ptr;
 
@@ -55,19 +52,13 @@ xcalloc(size_t nmemb, size_t size)
 		fatalx("xcalloc: zero size");
 	ptr = calloc(nmemb, size);
 	if (ptr == NULL)
-		fatalx("xcalloc: allocating %zu * %zu bytes: %s",
-		       nmemb, size, strerror(errno));
+		fatalx("xcalloc: allocating %zu * %zu bytes: %s", nmemb, size, strerror(errno));
 	return ptr;
 }
 
-void *
-xrealloc(void *ptr, size_t size)
-{
-	return xreallocarray(ptr, 1, size);
-}
+void *xrealloc(void *ptr, size_t size) { return xreallocarray(ptr, 1, size); }
 
-void *
-xreallocarray(void *ptr, size_t nmemb, size_t size)
+void *xreallocarray(void *ptr, size_t nmemb, size_t size)
 {
 	void *new_ptr;
 
@@ -75,13 +66,11 @@ xreallocarray(void *ptr, size_t nmemb, size_t size)
 		fatalx("xreallocarray: zero size");
 	new_ptr = reallocarray(ptr, nmemb, size);
 	if (new_ptr == NULL)
-		fatalx("xreallocarray: allocating %zu * %zu bytes: %s",
-		       nmemb, size, strerror(errno));
+		fatalx("xreallocarray: allocating %zu * %zu bytes: %s", nmemb, size, strerror(errno));
 	return new_ptr;
 }
 
-void *
-xrecallocarray(void *ptr, size_t oldnmemb, size_t nmemb, size_t size)
+void *xrecallocarray(void *ptr, size_t oldnmemb, size_t nmemb, size_t size)
 {
 	void *new_ptr;
 
@@ -89,13 +78,11 @@ xrecallocarray(void *ptr, size_t oldnmemb, size_t nmemb, size_t size)
 		fatalx("xrecallocarray: zero size");
 	new_ptr = recallocarray(ptr, oldnmemb, nmemb, size);
 	if (new_ptr == NULL)
-		fatalx("xrecallocarray: allocating %zu * %zu bytes: %s",
-		       nmemb, size, strerror(errno));
+		fatalx("xrecallocarray: allocating %zu * %zu bytes: %s", nmemb, size, strerror(errno));
 	return new_ptr;
 }
 
-char *
-xstrdup(const char *str)
+char *xstrdup(const char *str)
 {
 	char *cp;
 	if (str == NULL)
@@ -106,8 +93,7 @@ xstrdup(const char *str)
 	return cp;
 }
 
-char *
-xstrndup(const char *str, size_t maxlen)
+char *xstrndup(const char *str, size_t maxlen)
 {
 	char *cp;
 	if (str == NULL)

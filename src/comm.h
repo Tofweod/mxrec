@@ -29,10 +29,10 @@
 #define mxrec_packed
 #endif
 
-#define mxrec_cleanup(tag, ret, val) \
-	do {                         \
-		(ret) = (val);       \
-		goto tag;            \
+#define mxrec_cleanup(tag, ret, val)                                                                                   \
+	do {                                                                                                           \
+		(ret) = (val);                                                                                         \
+		goto tag;                                                                                              \
 	} while (0)
 
 #endif

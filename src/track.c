@@ -14,9 +14,8 @@ static dumpType trackDumpType = {
 	.listdump2json = NULL,
 };
 
-void *track_new(const char *title, const char *album,
-		unsigned int ar_size, artist **ars,
-		unsigned int alia_size, const char *alias[])
+void *track_new(const char *title, const char *album, unsigned int ar_size, artist **ars, unsigned int alia_size,
+		const char *alias[])
 {
 	unsigned int i;
 	track *tr = xmalloc(sizeof(track) + sizeof(u8s) * alia_size);

@@ -121,15 +121,9 @@ static inline void source_free(source *s)
 	xfree(s);
 }
 
-static inline void source_setuserdata(source *s, void *data)
-{
-	s->userdata = data;
-}
+static inline void source_setuserdata(source *s, void *data) { s->userdata = data; }
 
-static inline void source_clearuserdata(source *s)
-{
-	s->userdata = NULL;
-}
+static inline void source_clearuserdata(source *s) { s->userdata = NULL; }
 
 static inline void source_perform_security(void *sp)
 {

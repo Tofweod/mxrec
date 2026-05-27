@@ -6,5 +6,4 @@ int main(int argc, char **argv)
 
 	globalCurlCleanup();
 	return 0;
-
 }

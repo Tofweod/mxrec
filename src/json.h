@@ -8,7 +8,7 @@ struct json_err {
 	int length;
 };
 
-void write_jsonerr(void *err, const char *fmt,...);
+void write_jsonerr(void *err, const char *fmt, ...);
 
 void print_jsonerr(void *err);
 

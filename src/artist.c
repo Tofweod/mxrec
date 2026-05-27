@@ -16,7 +16,7 @@ artist *artist_new(const char *name, unsigned int alia_size, const char *alias[]
 {
 	unsigned int i;
 	artist *ar = xmalloc(sizeof(artist) + sizeof(u8s) * alia_size);
-	memset(ar,0,sizeof(*ar));
+	memset(ar, 0, sizeof(*ar));
 	ar->name = u8snew(name);
 	ar->dt = &artistDumpType;
 

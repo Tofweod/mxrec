@@ -3,5 +3,4 @@
 
 #include "playlist.h"
 
-
 #endif // !TOF_MXREC_AL_H
