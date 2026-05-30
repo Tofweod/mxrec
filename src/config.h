@@ -15,6 +15,7 @@
 	CONFIG_FIELD(char *, lastfmapi_key, xfree)                                                                     \
 	CONFIG_FIELD(char *, lastfmapi_period, xfree)                                                                  \
 	CONFIG_FIELD(char *, lastfmapi_strategy, xfree)                                                                \
+	CONFIG_FIELD(char *, lastfmapi_sample, xfree)                                                                  \
 	CONFIG_FIELD(unsigned, lastfmapi_diffusion_level, (void))                                                      \
 	CONFIG_FIELD(unsigned, lastfmapi_diffusion_size, (void))                                                       \
 	CONFIG_FIELD(char *, lastfmweb_base_url, xfree)                                                                \

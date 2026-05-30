@@ -46,6 +46,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->lastfmapi_diffusion_level = iniparser_getuint64(d, "lastfm.api:diffusion", 0);
 	cfg->lastfmapi_diffusion_size = iniparser_getuint64(d, "lastfm.api:diff-size", 5);
 	cfg->lastfmapi_strategy = xstrdup(iniparser_getstring(d, "lastfm.api:strategy", NULL));
+	cfg->lastfmapi_sample = xstrdup(iniparser_getstring(d, "lastfm.api:sample", NULL));
 
 	// lastfm web
 	cfg->lastfmweb_base_url = xstrdup(iniparser_getstring(d, "lastfm.web:base-url", NULL));
