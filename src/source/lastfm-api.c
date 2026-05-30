@@ -16,10 +16,11 @@
 #include "xmalloc.h"
 #include "yyjson/src/yyjson.h"
 #include <curl/curl.h>
+#include <math.h>
 #include <stdlib.h>
 #include <time.h>
 
-#undef LASTFMAPI_DEBUG
+#define LASTFMAPI_DEBUG
 
 #define LASTFMAPI_DECL static
 
@@ -850,6 +851,7 @@ la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_e
 	la_artist lar = {0};
 	const char *name, *mbid;
 	double match;
+	const char *match_s;
 
 	name = yyjson_get_str(yyjson_obj_get(val, "name"));
 	if (name == NULL)
@@ -859,7 +861,10 @@ la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_e
 	if (mbid == NULL)
 		write_jsonerr(jerr, "failed to get field \"mbid\" of artist");
 
-	match = yyjson_get_num(yyjson_obj_get(val, "match"));
+	match_s = yyjson_get_str(yyjson_obj_get(val, "match"));
+	// truncate size to 10
+	if (string2d(match_s, 10, &match) == 0)
+		match = 0;
 
 	la_artist_init(&lar, name, mbid, match);
 	return lar;
@@ -932,6 +937,7 @@ la_track *_lastfm_json2top_track(yyjson_val *val, bool strict, struct json_err *
 	ar_mbid = yyjson_get_str(yyjson_obj_get(ar, "mbid"));
 
 	ltr = la_track_new(name, artist, tr_mbid, ar_mbid);
+	ltr->internal = ltr->in_result = false;
 cleanup:
 	return ltr;
 }
@@ -971,7 +977,7 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 	tracks = yyjson_obj_get(yyjson_obj_get(root, "toptracks"), "track");
 
 	// artist.gettoptracks will return 200 OK HTTP status code on error
-	if (yyjson_is_arr(tracks)) {
+	if (!yyjson_is_arr(tracks)) {
 		_res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
@@ -1019,11 +1025,25 @@ size_t _lastfmapi_all_artists_top_tracks(const la_artist *ars, size_t ar_size, u
 	}
 
 	_res = xmalloc(total_size * sizeof(*_res));
-	memcpy(_res, total_res, total_size);
+	memcpy(_res, total_res, total_size * sizeof(*total_res));
 cleanup:
 	da_free(total_res);
 	*res = _res;
 	return total_size;
+}
+
+LASTFMAPI_DECL
+u8s _lastfmapi_artist_first(const la_track *ltr)
+{
+	u8s_ssize_t len;
+	u8s str = ltr->key.artist;
+	u8s find = u8schr(str, u8cpdecode("/"));
+	if (find) {
+		assert(!ltr->key.ar_mbid || !strlen(ltr->key.ar_mbid));
+		len = find - str;
+		return u8snewlen(str, len);
+	}
+	return u8sdup(str);
 }
 
 LASTFMAPI_DECL
@@ -1032,9 +1052,11 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 {
 	size_t i, ar_size = 0, tr_size;
 	la_artist *ars = NULL;
+	u8s artist = NULL;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	char diff_size_s[sizeof(diff_size) + 1];
+	diff_size = (unsigned)sqrt(diff_size);
 	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
 	struct json_err jerr;
 	jerr.length = 0;
@@ -1044,8 +1066,10 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
 
+	// here simply get the first artist
+	artist = _lastfmapi_artist_first(ltr);
 	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_ARTIST_GETSIMILAR, 5,
-			   MAKE_KV("artist", (char *)ltr->key.artist), MAKE_KV("mbid", (char *)ltr->key.ar_mbid),
+			   MAKE_KV("artist", (char *)artist), MAKE_KV("mbid", (char *)ltr->key.ar_mbid),
 			   MAKE_KV("api_key", ls->key), MAKE_KV("limit", diff_size_s),
 			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
 		*res = NULL;
@@ -1061,6 +1085,7 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, ltr, res, ls, opts, &jerr);
 
 cleanup:
+	u8sfree(artist);
 	for (i = 0; i < ar_size; ++i) {
 		la_artist_cleanup(&ars[i]);
 	}

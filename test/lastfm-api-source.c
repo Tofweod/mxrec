@@ -21,7 +21,7 @@ int main()
 		return 1;
 	}
 
-	if ((ret = recomm_multi(s, 20, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
+	if ((ret = recomm_multi(s,10, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
 		/* playlist_free(p); */
 		printf("ret of recomm_multi is %d\n", ret);
 	}

@@ -77,7 +77,6 @@ int string2ull(const char *s, unsigned long long *value);
 int string2l(const char *s, size_t slen, long *value);
 int string2ul_base16_async_signal_safe(const char *src, size_t slen, unsigned long *result_output);
 int string2ld(const char *s, size_t slen, long double *dp);
-// TODO
 int string2d(const char *s, size_t slen, double *dp);
 int trimDoubleString(char *buf, size_t len);
 // TODO

@@ -449,6 +449,31 @@ int string2ld(const char *s, size_t slen, long double *dp) {
     return 1;
 }
 
+/* Convert a string into a double. Returns 1 if the string could be parsed
+ * into a (non-overflowing) double, 0 otherwise. The value will be set to
+ * the parsed value when appropriate.
+ *
+ * Note that this function demands that the string strictly represents
+ * a double: no spaces or other characters before or after the string
+ * representing the number are accepted. */
+int string2d(const char *s, size_t slen, double *dp) {
+    errno = 0;
+    /* Fast path to reject empty strings, or strings starting by space explicitly */
+    if (unlikely(slen == 0 ||
+        isspace(((const char*)s)[0])))
+        return 0;
+    char *fallback_eptr;
+    *dp = strtod(s, &fallback_eptr);
+    if (*fallback_eptr != '\0') return 0;
+    if (unlikely(errno == EINVAL ||
+        (errno == ERANGE &&
+            (*dp == HUGE_VAL || *dp == -HUGE_VAL || fpclassify(*dp) == FP_ZERO)) ||
+        isnan(*dp)))
+        return 0;
+    return 1;
+}
+
+
 /* Returns 1 if the double value can safely be represented in long long without
  * precision loss, in which case the corresponding long long is stored in the out variable. */
 int double2ll(double d, long long *out) {
