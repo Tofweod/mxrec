@@ -51,6 +51,10 @@ da-test: da-test.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
 	@echo "Built $@"
 
+random-test: random-test.c $(LIB_OBJS)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
+	@echo "Built $@"
+
 clean:
 	rm -rf $(TARGETS)
 
