@@ -8,15 +8,14 @@
 #include <string.h>
 
 #define MAX_KEY_SIZE 50
+#define MAX_UINT_STRING_SIZE 21
 
 typedef struct {
 	const char *key;
 	const char *val;
 } kv_t;
 
-#define MAKE_KV(k, v)                       \
-	(assert(strlen(k) <= MAX_KEY_SIZE), \
-	 (kv_t){.key = (k), .val = (v)})
+#define MAKE_KV(k, v) (assert(strlen(k) <= MAX_KEY_SIZE), (kv_t){.key = (k), .val = (v)})
 
 #define KV_END (kv_t){0}
 
@@ -48,7 +47,7 @@ void sb_append_char(StrBuffer *sb, int ch);
 /* The maximum number of characters needed to represent a long double
  * as a string (long double has a huge range of some 4952 chars, see LDBL_MAX).
  * This should be the size of the buffer given to ld2string */
-#define MAX_LONG_DOUBLE_CHARS 5*1024
+#define MAX_LONG_DOUBLE_CHARS 5 * 1024
 
 /* The maximum number of characters needed to represent a double
  * as a string (double has a huge range of some 328 chars, see DBL_MAX).

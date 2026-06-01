@@ -9,5 +9,6 @@ b64-qr
 util-string
 da-test
 random-test
+time-test
 
 vgcore.*

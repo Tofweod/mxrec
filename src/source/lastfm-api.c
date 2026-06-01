@@ -13,6 +13,7 @@
 #include "u8string.h"
 #include "uthash.h"
 #include "utils/string.h"
+#include "utils/time.h"
 #include "xmalloc.h"
 #include "yyjson/src/yyjson.h"
 #include <curl/curl.h>
@@ -42,15 +43,6 @@ size_t lastfmapi_write_callback(char *ptr, const size_t size, const size_t nmemb
 FUNCTION_FIELD_LIST
 
 #undef FUNCTION_FIELD
-
-LASTFMAPI_DECL
-time_t lastfmapi_now(void)
-{
-	static time_t now_time = 0;
-	if (now_time == 0)
-		now_time = time(NULL);
-	return now_time;
-}
 
 typedef struct lastfmapi_artist {
 	u8s name;
@@ -207,7 +199,9 @@ void la_track_map_cleanup(la_track *hm)
 	if (hm == NULL)
 		return;
 	la_track *cur, *tmp;
+#ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "recent hash map is\n");
+#endif
 	HASH_ITER(hh, hm, cur, tmp)
 	{
 #ifdef LASTFMAPI_DEBUG
@@ -498,7 +492,7 @@ int lastfmapi_jsonbuf2recent_latrack_map(curlbuf *buf, bool strict, la_track **m
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
-	now = lastfmapi_now();
+	now = mxrec_now();
 	it = yyjson_arr_iter_with(tracks);
 	while ((track = yyjson_arr_iter_next(&it))) {
 		la_track *find;
@@ -818,8 +812,8 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	jerr.length = 0;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
-	char diff_size_s[sizeof(diff_size) + 1];
-	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
+	char diff_size_s[MAX_UINT_STRING_SIZE];
+	ull2string(diff_size_s, MAX_UINT_STRING_SIZE, diff_size);
 
 	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_TRACK_GETSIMILAR, 6,
 			   MAKE_KV("artist", (char *)ltr->key.artist), MAKE_KV("track", (char *)ltr->key.name),
@@ -967,8 +961,8 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 {
 	size_t i, tr_size;
 	la_track **_res = NULL;
-	char diff_size_s[sizeof(diff_size) + 1];
-	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
+	char diff_size_s[MAX_UINT_STRING_SIZE];
+	ull2string(diff_size_s, MAX_UINT_STRING_SIZE, diff_size);
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 
@@ -1073,9 +1067,9 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 	u8s artist = NULL;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
-	char diff_size_s[sizeof(diff_size) + 1];
+	char diff_size_s[MAX_UINT_STRING_SIZE];
 	diff_size = (unsigned)sqrt(diff_size);
-	ull2string(diff_size_s, sizeof(diff_size) + 1, diff_size);
+	ull2string(diff_size_s, MAX_UINT_STRING_SIZE, diff_size);
 	struct json_err jerr;
 	jerr.length = 0;
 
@@ -1151,19 +1145,18 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
 
-	// TODO get period, here simply use limit for debug
-	size_t limit = num;
-	char limit_str[sizeof(limit) + 1];
-	size_t str_len = ull2string(limit_str, sizeof(limit) + 1, limit);
+	period = string2timestamp(ls->period);
+	char from_s[MAX_UINT_STRING_SIZE];
+	size_t str_len = ull2string(from_s, MAX_UINT_STRING_SIZE, period);
 
 	if (str_len == 0)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	limit_str[str_len] = '\0';
+	from_s[str_len] = '\0';
 
 	if ((ret = lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_USER_GETRECENTTRACKS, 4,
 				  MAKE_KV("username", (char *)ls->username), MAKE_KV("api_key", ls->key),
-				  MAKE_KV("limit", limit_str), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0))
+				  MAKE_KV("from", from_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0))
 		mxrec_cleanup(cleanup, ret, ret);
 
 	// recent tracks map
