@@ -10,7 +10,7 @@
 #define assert(e) (likely((e)) ? (void)0 : (_Assert(#e, __FILE__, __LINE__), mxrec_unreachable()))
 #define panic(...) _Panic(__FILE__, __LINE__, __VA_ARGS__), mxrec_unreachable()
 #define error(...) _Error(__FILE__, __LINE__, __VA_ARGS__)
-#define log(...)
+#define mxrec_log(...)
 
 void _Assert(const char *e, const char *file, int line);
 mxrec_noreturn void _Panic(const char *file, int line, const char *msg, ...);

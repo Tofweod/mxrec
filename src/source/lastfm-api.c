@@ -1,5 +1,6 @@
 #include "lastfm-api.h"
 #include "bb.h"
+#include "bit.h"
 #include "comm.h"
 #include "config.h"
 #include "curl-impersonate.h"
@@ -8,6 +9,7 @@
 #include "lastfm-comm.h"
 #include "monotonic.h"
 #include "playlist.h"
+#include "random.h"
 #include "source.h"
 #include "source/comm-source.h"
 #include "u8string.h"
@@ -358,6 +360,50 @@ int la_track_score_cmp(const void *a, const void *b)
 }
 
 LASTFMAPI_DECL
+int _lastfmapi_recomm_random_sample(size_t len, size_t *idxs, size_t lb, size_t ub, double lambda)
+{
+	size_t ret, i, range;
+	double step, sum, factor, *widths = NULL, *rands = NULL;
+	double clb, cub;
+	range = ub - lb;
+	if (range + 1 <= len) {
+		for (i = 0; i < len; ++i) {
+			idxs[i] = i;
+		}
+		return len;
+	}
+	rands = xmalloc(sizeof(*rands) * len);
+	if (uniform01Array(rands, len) != 0)
+		mxrec_cleanup(cleanup, ret, 0);
+
+	widths = xmalloc(sizeof(*widths) * len);
+	step = (double)(range) / len;
+	factor = -log(lambda) / (range);
+	sum = 0.0;
+	for (i = 0; i < len; ++i) {
+		widths[i] = exp(-factor * (lb + i * step - lb));
+		sum += widths[i];
+	}
+	for (i = 0; i < len; ++i) {
+		widths[i] /= sum;
+	}
+	clb = lb;
+	cub = widths[0] * range;
+	for (i = 0; i < len; ++i) {
+		idxs[i] = (size_t)(clb + (cub - clb) * rands[i]);
+		if (i < len - 1) {
+			clb = cub;
+			cub += widths[i + 1] * range;
+		}
+	}
+	ret = len;
+cleanup:
+	xfree(rands);
+	xfree(widths);
+	return ret;
+}
+
+LASTFMAPI_DECL
 size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track ***res, lastfmapi_source *ls,
 				    recomm_option opts);
 LASTFMAPI_DECL
@@ -405,7 +451,9 @@ LASTFMAPI_DECL
 int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusion_strategy strategy, la_track *map,
 			       playlist *p, int diffusion, time_t period, size_t target)
 {
+	int ret;
 	size_t i, cur_num = 0;
+	size_t idx, *idxs, map_size;
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(hh, map));
 #endif
@@ -413,17 +461,30 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusi
 	src = xmalloc((target + 1) * sizeof(*src));
 	// sentinel
 	memset(src, 0, (target + 1) * sizeof(*src));
+	// Top N diffusion or RANDOM
 	if (strategy & DIFFUSION_TOPN) {
-		// Top N diffusion or RANDOM
 		for (i = 0, cur = map; cur && i < target; ++i, cur = cur->hh.next) {
 			src[i] = cur;
 		}
 	} else if (strategy & DIFFUSION_RAMSAMPLE) {
-		// TODO random
+		map_size = HASH_CNT(hh, map);
+		idxs = xmalloc(sizeof(*idxs) * target);
+		assert(target > 0);
+		if (_lastfmapi_recomm_random_sample(target, idxs, 0, map_size - 1, 5.0) == 0)
+			mxrec_cleanup(cleanup, ret, -1);
+
+		for (idx = 0, i = 0, cur = map; cur && idx < target; ++i, cur = cur->hh.next) {
+			if (i == idxs[idx]) {
+				src[idx] = cur;
+				++idx;
+			}
+		}
 	}
 
 	assert(src[0]);
 	_lastfmapi_diffusion_core(src, strategy, diffusion, period, target, &cur_num, map, p, ls, opts);
+cleanup:
+	xfree(idxs);
 	xfree(src);
 	return cur_num;
 }
@@ -1129,7 +1190,7 @@ int lastfmapi_recomm_single(source *s, playitem *p, recomm_option opts)
 LASTFMAPI_DECL
 int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
-	log("Calling lastfm-api recomm_multi\n");
+	mxrec_log("Calling lastfm-api recomm_multi\n");
 	int ret;
 	curlbuf buf;
 	la_track *la_tr_map = NULL;

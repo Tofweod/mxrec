@@ -492,7 +492,7 @@ void lastfmweb_source_destroy(void *sp)
 LASTFMWEB_DECL
 int lastfmweb_recomm_single(source *s, playitem *p, recomm_option opts)
 {
-	log("Calling lastfm-web recomm_single\n");
+	mxrec_log("Calling lastfm-web recomm_single\n");
 	if (opts.level == RECOMM_SIMPLE)
 		return _lastfmweb_recomm_single_simple(s, p, opts);
 	else if (opts.level == RECOMM_FULL)
@@ -510,7 +510,7 @@ int lastfmweb_recomm_single(source *s, playitem *p, recomm_option opts)
 LASTFMWEB_DECL
 int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
-	log("Calling lastfm-web recomm_multi\n");
+	mxrec_log("Calling lastfm-web recomm_multi\n");
 	int ret;
 	CURLcode code;
 	curlbuf buf;
