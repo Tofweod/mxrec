@@ -18,6 +18,8 @@
 	CONFIG_FIELD(char *, lastfmapi_sample, xfree)                                                                  \
 	CONFIG_FIELD(unsigned, lastfmapi_diffusion_level, (void))                                                      \
 	CONFIG_FIELD(unsigned, lastfmapi_diffusion_size, (void))                                                       \
+	CONFIG_FIELD(double, lastfmapi_random_lambda, (void))                                                          \
+	CONFIG_FIELD(double, lastfmapi_diff_lambda, (void))                                                            \
 	CONFIG_FIELD(char *, lastfmweb_base_url, xfree)                                                                \
 	CONFIG_FIELD(char *, lastfmweb_recomm_path, xfree)                                                             \
 	CONFIG_FIELD(char *, lastfmweb_recomm_method, xfree)                                                           \

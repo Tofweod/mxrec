@@ -8,7 +8,6 @@
 #include <string.h>
 
 #define MAX_KEY_SIZE 50
-#define MAX_UINT_STRING_SIZE 21
 
 typedef struct {
 	const char *key;

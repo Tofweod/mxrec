@@ -22,7 +22,7 @@ int main()
 	}
 
 	if ((ret = recomm_multi(s,5, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
-		/* playlist_free(p); */
+		playlist_free(p);
 		printf("ret of recomm_multi is %d\n", ret);
 	}
 
