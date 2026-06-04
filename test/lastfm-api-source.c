@@ -11,7 +11,7 @@ int main()
 	config_t cfg = {0};
 	source *s;
 	playlist p;
-	const char *configfile = "../example.ini";
+	const char *configfile = "../config.ini";
 	if (!load_config(configfile, &cfg)) {
 		return 1;
 	}
