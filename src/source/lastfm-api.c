@@ -24,8 +24,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define LASTFMAPI_DEBUG
-
 #define LASTFMAPI_DECL static
 
 #define JSON_ERR_HEAD "LASTFMWEB"
@@ -992,8 +990,7 @@ la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_e
 		write_jsonerr(jerr, "failed to get field \"mbid\" of artist");
 
 	match_s = yyjson_get_str(yyjson_obj_get(val, "match"));
-	// truncate size to 10
-	if (string2d(match_s, 10, &match) == 0)
+	if (string2d(match_s, MAX_DOUBLE_CHARS, &match) == 0)
 		match = 0;
 
 	la_artist_init(&lar, name, mbid, match);
@@ -1243,6 +1240,7 @@ int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period)
 	double factor, w, numerator, denominator;
 	numerator = denominator = 0.0;
 	while (cur) {
+		// simply set the parameter of Ebbinghaus forgetting curve to be 10
 		w = exp(-lambda * _ruts_curve(cur->ruts, period, 10));
 		numerator += cur->match * w;
 		denominator += w;
