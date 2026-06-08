@@ -5,7 +5,8 @@ compile_commands.json
 u8s-basic
 lastfm-web-source
 lastfm-api-source
-b64-qr
+ncm-source
+qr-test
 util-string
 da-test
 random-test

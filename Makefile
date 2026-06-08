@@ -32,7 +32,8 @@ LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
 	lib/iniparser/libiniparser.$(LIB_TYPE) \
 	$(jsondir)/build/libyyjson.$(LIB_TYPE) \
-	lib/libb64/src/libb64.a 
+	lib/libb64/src/libb64.a \
+	lib/libqrencode/libqrencode.a
 
 
 vpath %.$(TYPE) $(sort $(dir $(SRCS)))
@@ -60,6 +61,12 @@ $(jsondir)/build/libyyjson.$(LIB_TYPE):
 	mkdir -p $(jsondir)/build
 	$(CMAKE) -S $(jsondir) -B $(jsondir)/build
 	$(MAKE) -C $(jsondir)/build
+
+lib/libqrencode/libqrencode.a:
+	@echo "Building lib for libqrencode..."
+	cd lib/libqrencode && ./autogen.sh && ./configure --disable-shared --enable-static --without-tools
+	$(MAKE) -C lib/libqrencode
+	cd lib/libqrencode && cp .libs/libqrencode.a libqrencode.a
 
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
@@ -89,6 +96,8 @@ clean : cleanobj
 	make -C lib/utf8proc clean
 	make -C lib/libb64 clean
 	rm -rf $(jsondir)/build
+	make -C lib/libqrencode clean
+	rm -r lib/libqrencode/libqrencode.a
 	make -C test clean
 
 cleanobj :

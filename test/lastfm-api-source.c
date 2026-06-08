@@ -17,7 +17,7 @@ int main()
 	}
 
 	if (lastfmapi_source_new(&s, &cfg) < 0) {
-		printf("failed to create source");
+		printf("failed to create lastfm api source\n");
 		return 1;
 	}
 

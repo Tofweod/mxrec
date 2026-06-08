@@ -135,5 +135,7 @@ int main()
 	/* fwrite(data, 1, outlen, stdout); */
 
 	b64writeQR(b64_data, NULL, 4, 0, 0, 1);
+	printf("\n");
+	strwriteQR("hello 2", NULL, 4, 0, 0, 1);
 	return 0;
 }

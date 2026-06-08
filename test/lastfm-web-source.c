@@ -17,7 +17,7 @@ int main()
 	}
 
 	if (lastfmweb_source_new(&s, &cfg) < 0) {
-		printf("failed to create source");
+		printf("failed to create lastfm web source\n");
 		return 1;
 	}
 

@@ -7,3 +7,9 @@
 [submodule "lib/yyjson"]
 	path = lib/yyjson
 	url = https://github.com/ibireme/yyjson.git
+[submodule "lib/libev"]
+	path = lib/libev
+	url = https://github.com/enki/libev.git
+[submodule "lib/libqrencode"]
+	path = lib/libqrencode
+	url = https://github.com/fukuchi/libqrencode.git

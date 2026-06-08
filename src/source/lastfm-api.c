@@ -435,7 +435,7 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, 
 				  diffusion_strategy strategy, const la_track *map, la_track ***res,
 				  lastfmapi_source *ls, recomm_option opts);
 LASTFMAPI_DECL
-int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period);
+int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
 LASTFMAPI_DECL
 void _lastfmapi_diffusion_core(la_track **src, diffusion_strategy strategy, int diffusion, time_t period, size_t target,
@@ -566,6 +566,7 @@ struct lastfmapi_source {
 
 	double random_lambda;
 	double diff_lambda;
+	double score_beta;
 };
 
 LASTFMAPI_DECL
@@ -695,6 +696,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	s->strategy = str2strategy(cfg->lastfmapi_strategy) | str2strategy(cfg->lastfmapi_sample);
 	s->random_lambda = cfg->lastfmapi_random_lambda;
 	s->diff_lambda = cfg->lastfmapi_diff_lambda;
+	s->score_beta = cfg->lastfmapi_score_beta;
 	return source_check(s);
 }
 
@@ -774,7 +776,7 @@ void _lastfmapi_diffusion_core(la_track **src, diffusion_strategy strategy, int 
 cleanup_child:
 		da_free(child);
 	}
-	if (_lastfmapi_latracks_score(res, da_len(res), ls->diff_lambda, period) < 0) {
+	if (_lastfmapi_latracks_score(res, da_len(res), ls->diff_lambda, period, ls->score_beta) < 0) {
 		da_free(res);
 		return;
 	}
@@ -1231,7 +1233,7 @@ double _ruts_curve(time_t ruts, time_t period, double beta)
 
 #define DEFAULT_SCORE 100.0f
 LASTFMAPI_DECL
-int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period)
+int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period, double beta)
 {
 	if (ltr == NULL)
 		return 0;
@@ -1240,8 +1242,7 @@ int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period)
 	double factor, w, numerator, denominator;
 	numerator = denominator = 0.0;
 	while (cur) {
-		// simply set the parameter of Ebbinghaus forgetting curve to be 10
-		w = exp(-lambda * _ruts_curve(cur->ruts, period, 10));
+		w = exp(-lambda * _ruts_curve(cur->ruts, period, beta));
 		numerator += cur->match * w;
 		denominator += w;
 		cur = cur->parent;
@@ -1257,12 +1258,12 @@ int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period)
 }
 
 LASTFMAPI_DECL
-int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period)
+int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta)
 {
 	int ret;
 	size_t i;
 	for (i = 0; i < len; ++i)
-		if ((ret = _lastfmapi_latrack_score(tracks[i], lambda, period)) < 0)
+		if ((ret = _lastfmapi_latrack_score(tracks[i], lambda, period, beta)) < 0)
 			return ret;
 	return 0;
 }
