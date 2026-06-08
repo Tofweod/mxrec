@@ -1,10 +1,162 @@
 #include "ncm.h"
 #include "assert.h"
+#include "bb.h"
+#include "comm.h"
 #include "config.h"
+#include "json.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
+#include "utils/string.h"
 #include "xmalloc.h"
+#include "yyjson/src/yyjson.h"
+#include <curl/curl.h>
+#include <signal.h>
+#include <sys/select.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define NCM_MODULE_ENTRYPOINT "server.js"
+
+#define NCM_DECL static
+
+// curlbuf
+#define CURLBUF_DEFAULT_CAP (1024)
+BUFFERBUILDER_INIT(NCM_DECL, curlbuf, curlbuf, void);
+
+NCM_DECL
+size_t ncm_curl_write_callback(char *ptr, const size_t size, const size_t nmemb, curlbuf *cb)
+{
+	const size_t real = size * nmemb;
+	curlbuf_append(cb, ptr, real);
+	return real;
+}
+
+typedef enum ncm_address_type {
+	NCM_NONE_ADDRESS,
+	NCM_HTTP_REQUEST,
+	NCM_LOCAL_SOCKET,
+} ncm_address_type;
+
+NCM_DECL
+ncm_address_type str2addr_type(const char *str)
+{
+	const char *err_strategy;
+	if (str == NULL)
+		mxrec_cleanup(err, err_strategy, "NULL");
+	if (strcmp(str, "http") == 0)
+		return NCM_HTTP_REQUEST;
+	else if (strcmp(str, "socket") == 0)
+		return NCM_LOCAL_SOCKET;
+	else
+		mxrec_cleanup(err, err_strategy, str);
+err:
+	error("failed to convert %s into diffusion_strategy", err_strategy);
+	return NCM_NONE_ADDRESS;
+}
+
+#define NCM_HTTP_REQUEST_STR "http"
+#define NCM_LOCAL_SOCKET_STR "socket"
+
+typedef struct ncm_module {
+	pid_t pid;
+	// TODO
+	char *status;
+} ncm_module;
+
+NCM_DECL
+int ncm_wait_ready(pid_t pid, int fd, int timeout)
+{
+	char buf[1024];
+	struct timeval tv = {.tv_sec = timeout, .tv_usec = 0};
+	fd_set fds;
+
+	while (1) {
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+
+		int ret = select(fd + 1, &fds, NULL, NULL, &tv);
+		if (ret <= 0) {
+			error("timeout waiting for ncm module to start");
+			return -1;
+		}
+
+		ssize_t n = read(fd, buf, sizeof(buf) - 1);
+		if (n <= 0) {
+			error("pipe closed before ncm module started");
+			return -1;
+		}
+		buf[n] = '\0';
+
+		if (strstr(buf, "listening") != NULL) {
+			return 0;
+		}
+	}
+}
+
+NCM_DECL
+int ncm_module_init(ncm_module *M, ncm_address_type type, const char *address, int port, const char *work_dir)
+{
+	int ret, pipefd[2];
+	M->pid = -1;
+	M->status = NULL;
+
+	char port_str[LONG_STR_SIZE];
+	ull2string(port_str, LONG_STR_SIZE, port);
+
+	if (pipe(pipefd) < 0)
+		return -1;
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		close(pipefd[0]);
+		close(pipefd[1]);
+		return -1;
+	}
+
+	if (pid == 0) {
+		close(pipefd[0]);
+		dup2(pipefd[1], STDOUT_FILENO);
+		close(pipefd[1]);
+
+		chdir(work_dir);
+
+		if (type == NCM_LOCAL_SOCKET) {
+			execlp("node", "node", NCM_MODULE_ENTRYPOINT, "--mode", NCM_LOCAL_SOCKET_STR, "--address",
+			       address, NULL);
+		} else {
+			execlp("node", "node", NCM_MODULE_ENTRYPOINT, "--mode", NCM_HTTP_REQUEST_STR, "--address",
+			       address, "--port", port_str, NULL);
+		}
+		_exit(127);
+	}
+
+	close(pipefd[1]);
+	M->pid = pid;
+	if (ncm_wait_ready(pid, pipefd[0], 5) < 0)
+		goto fail;
+
+	close(pipefd[0]);
+	return 0;
+fail:
+	close(pipefd[0]);
+	kill(pid, SIGTERM);
+	waitpid(pid, NULL, 0);
+	M->pid = -1;
+	return -1;
+}
+
+NCM_DECL
+void ncm_module_free(ncm_module *M)
+{
+	if (M == NULL)
+		return;
+	if (M->pid > 0) {
+		kill(M->pid, SIGTERM);
+		waitpid(M->pid, NULL, 0);
+	}
+}
 
 typedef struct ncm_security {
 
@@ -12,7 +164,7 @@ typedef struct ncm_security {
 
 static ncm_security __security;
 
-#define FUNCTION_FIELD(retype, name, ...) static inline retype ncm_##name(__VA_ARGS__);
+#define FUNCTION_FIELD(retype, name, ...) NCM_DECL retype ncm_##name(__VA_ARGS__);
 
 FUNCTION_FIELD_LIST
 
@@ -24,24 +176,193 @@ static source __ncm_source = {
 	.rmp = ncm_recomm_multi,
 	.sh = ncm_security_handle,
 	.security = &__security,
+	.cc = ncm_config_check,
 };
 
 struct ncm_source {
 	source src;
-	char *email;
+	int port;
+	char *address;
+	ncm_address_type addr_type;
 	char *cookie;
+	ncm_module M;
+
+	CURL *curl;
 };
 
-static int ncm_source_init(void *sp, config_t *cfg)
+NCM_DECL
+int ncm_source_init(void *sp, config_t *cfg)
 {
 	ncm_source *s = (ncm_source *)sp;
 	s->src = __ncm_source;
 
+	ncm_address_type type = str2addr_type(cfg->ncm_bind_method);
+	const char *address = cfg->ncm_bind_address;
+	int port = cfg->ncm_port;
+	if (ncm_module_init(&s->M, type, address, port, cfg->ncm_work_dir) < 0)
+		return -1;
+
+	s->curl = curl_easy_init();
+	if (s->curl == NULL)
+		return -1;
+
+	s->port = port;
+	s->address = xstrdup(address);
+	s->addr_type = type;
 	s->cookie = xstrdup(cfg->ncm_cookie);
+	return 0;
+}
+
+NCM_DECL
+inline void ncm_source_destroy(void *sp)
+{
+	ncm_source *s = (ncm_source *)sp;
+	xfree(s->address);
+	xfree(s->cookie);
+	curl_easy_cleanup(s->curl);
+	ncm_module_free(&s->M);
+}
+
+// ncm module routing
+#define NCM_MODULE_ENTRY_LIST                                                                                          \
+	NCM_MODULE_ENTRY(LOGIN_QR_KEY, "/login/qr/key", 0)                                                             \
+	NCM_MODULE_ENTRY(LOGIN_QR_CREATE, "/login/qr/create", 1)                                                       \
+	NCM_MODULE_ENTRY(LOGIN_QR_CHECK, "/login/qr/check", 1)
+
+typedef struct ncm_module_entry {
+	const char *path;
+	unsigned param_size;
+} ncm_module_entry;
+
+#define NCM_MODULE_ENTRY(name, _path, _count) NCM_DECL ncm_module_entry name = {.path = _path, .param_size = _count};
+
+NCM_MODULE_ENTRY_LIST
+
+NCM_DECL
+char *ncm_get_url(ncm_source *s, ncm_address_type type, const ncm_module_entry entry)
+{
+	if (type == NCM_HTTP_REQUEST) {
+		return parseFormat("http://%s:%d%s", s->address, s->port, entry.path);
+	} else if (type == NCM_LOCAL_SOCKET) {
+		return parseFormat("http://localhost%s", entry.path);
+	}
+	return NULL;
+}
+
+// ncm curl
+NCM_DECL
+int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
+{
+	int ret;
+	size_t i, para_str_len;
+	CURLcode code;
+	struct curl_slist *headers = NULL;
+	long http_code = 0;
+	char *url, *para_str = NULL;
+
+	// json
+	va_list paras;
+	yyjson_mut_doc *doc = NULL;
+	yyjson_mut_val *root;
+
+	CURL *curl = s->curl;
+	ncm_address_type type = s->addr_type;
+
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ncm_curl_write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
+
+	url = ncm_get_url(s, type, entry);
+	if (url == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+
+	// all routes are post methods
+	curl_easy_setopt(curl, CURLOPT_POST, 1L);
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	if (type == NCM_LOCAL_SOCKET) {
+		curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH, s->address);
+	}
+
+	headers = curl_slist_append(headers, "Content-Type: application/json");
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+	doc = yyjson_mut_doc_new(NULL);
+	if (doc == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+	root = yyjson_mut_obj(doc);
+	if (root == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+	yyjson_mut_doc_set_root(doc, root);
+
+	va_start(paras, entry);
+	for (i = 0; i < entry.param_size; ++i) {
+		kv_t pair = va_arg(paras, kv_t);
+		yyjson_mut_obj_add_str(doc, root, pair.key, pair.val);
+	}
+	va_end(paras);
+	para_str = yyjson_mut_write(doc, 0, &para_str_len);
+	if (para_str == NULL) {
+		error("failed to write json in ncm curl");
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, para_str);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, para_str_len);
+
+	code = curl_easy_perform(curl);
+	if (code != CURLE_OK) {
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
+	if (http_code != 200) {
+		// TODO
+	}
+
+	ret = 0;
+cleanup:
+	if (headers)
+		curl_slist_free_all(headers);
+	xfree(url);
+	yyjson_mut_doc_free(doc);
+	xfree(para_str);
+	return ret;
+}
+
+NCM_DECL
+int ncm_recomm_single(source *s, playitem *p, recomm_option opts)
+{
+	// TODO
+}
+
+NCM_DECL
+int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
+{
+	// TODO
+}
+
+NCM_DECL
+void ncm_security_handle(source *s) {}
+
+NCM_DECL
+bool ncm_config_check(source *s)
+{
+	bool ret = true;
+	ncm_source *ns = (ncm_source *)s;
+	// TODO
+	return ret;
+}
+
+NCM_DECL
+int ncm_get_cookie_by_qr(ncm_source *s)
+{
+	curlbuf buf;
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
+	ncm_curl(s, &buf, LOGIN_QR_KEY);
 
 	return 0;
 }
 
+// EXPOSE
 int ncm_source_new(source **src, config_t *cfg)
 {
 	assert(cfg);
@@ -55,24 +376,9 @@ int ncm_source_new(source **src, config_t *cfg)
 	return 0;
 }
 
-static inline void ncm_source_destroy(void *sp)
+int ncm_get_auth(source *s)
 {
-	// TODO
-	ncm_source *s = (ncm_source *)sp;
-	xfree(s->email);
-	xfree(s->cookie);
-}
-
-static inline int ncm_recomm_single(source *s, playitem *p, recomm_option opts)
-{
-	// TODO
-}
-
-static inline int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
-{
-	// TODO
-}
-
-static inline void ncm_security_handle(source *s)
-{
+	if (s == NULL)
+		return -1;
+	return ncm_get_cookie_by_qr((ncm_source *)s);
 }

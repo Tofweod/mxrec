@@ -49,6 +49,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->lastfmapi_sample = xstrdup(iniparser_getstring(d, "lastfm.api:sample", NULL));
 	cfg->lastfmapi_random_lambda = iniparser_getdouble(d, "lastfm.api:random-sample-lambda", 0.0);
 	cfg->lastfmapi_diff_lambda = iniparser_getdouble(d, "lastfm.api:diffusion-lambda", 1.0);
+	cfg->lastfmapi_score_beta = iniparser_getdouble(d, "lastfm.api:score-beta", 10.0);
 
 	// lastfm web
 	cfg->lastfmweb_base_url = xstrdup(iniparser_getstring(d, "lastfm.web:base-url", NULL));
@@ -59,6 +60,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->lastfmweb_recomm_accept = xstrdup(iniparser_getstring(d, "lastfm.web:recomm-accept", NULL));
 
 	// ncm
+	cfg->ncm_work_dir = xstrdup(iniparser_getstring(d, "ncm:work-dir", NULL));
 	cfg->ncm_cookie = xstrdup(iniparser_getstring(d, "ncm:cookie", NULL));
 	cfg->ncm_bind_method = xstrdup(iniparser_getstring(d, "ncm:bind-method", "http"));
 	cfg->ncm_bind_address = xstrdup(iniparser_getstring(d, "ncm:bind-address", "127.0.0.1"));

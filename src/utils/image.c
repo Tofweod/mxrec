@@ -1,17 +1,23 @@
 /**
  * Copyright (C) 2006-2018 Kentaro Fukuchi
  *
- * This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation; either version 2.1 of the License, or any later version.
+ * This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General
+ * Public License as published by the Free Software Foundation; either version 2.1 of the License, or any later version.
  *
- * This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
+ * This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Lesser General Public License along with this library; if not, write to the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ * You should have received a copy of the GNU Lesser General Public License along with this library; if not, write to
+ * the Free Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include "image.h"
+#include "comm.h"
 #include "libb64/include/b64/cdecode.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "libqrencode/qrencode.h"
 #include "stb_image_resize2.h"
 #include "xmalloc.h"
 #include <stdio.h>
@@ -50,10 +56,8 @@ static int __resize_img_rawdata(unsigned char **dest, unsigned char *src, int ol
 {
 	unsigned char *_dest;
 
-	_dest = stbir_resize(src, oldwidth, oldwidth, 0,
-			     0, newwidth, newwidth, 0,
-			     STBIR_1CHANNEL,
-			     STBIR_TYPE_UINT8, STBIR_EDGE_CLAMP, STBIR_FILTER_BOX);
+	_dest = stbir_resize(src, oldwidth, oldwidth, 0, 0, newwidth, newwidth, 0, STBIR_1CHANNEL, STBIR_TYPE_UINT8,
+			     STBIR_EDGE_CLAMP, STBIR_FILTER_BOX);
 
 	if (_dest == NULL) {
 		*dest = NULL;
@@ -80,8 +84,8 @@ static FILE *__openfile(const char *outfile)
 	return fp;
 }
 
-static void __writeQRUTF8_margin(FILE *fp, int realwidth, int margin, const char *white,
-				 const char *reset, const char *full)
+static void __writeQRUTF8_margin(FILE *fp, int realwidth, int margin, const char *white, const char *reset,
+				 const char *full)
 {
 	int x, y;
 
@@ -176,7 +180,8 @@ static int __writeQRUTF8(unsigned char *data, int width, int margin, const char 
 
 	__writeQRUTF8_margin(fp, realwidth, margin, white, reset, full);
 
-	fclose(fp);
+	if (fp != stdout)
+		fclose(fp);
 	return 0;
 }
 
@@ -201,8 +206,7 @@ char *b64decode(const char *b64rawdata, size_t *outlen)
 	size_t max_outlen = inlen / 4 * 3 + inlen % 4;
 	char *output = xmalloc(max_outlen + 1);
 
-	size_t written = base64_decode_block(b64rawdata, inlen,
-					     output, &state);
+	size_t written = base64_decode_block(b64rawdata, inlen, output, &state);
 
 	if (outlen)
 		*outlen = written;
@@ -240,4 +244,36 @@ cleanup:
 	xfree(resizedata);
 
 	return ret;
+}
+
+int strwriteQR(const char *strdata, const char *outfile, int margin, int use_ansi, int invert, int resize)
+{
+	QRcode *qrcode;
+	unsigned char *resizedata;
+	int ret, rwidth, width;
+
+	qrcode = QRcode_encodeString(strdata, 0, QR_ECLEVEL_M, QR_MODE_8, 1);
+
+	if (!qrcode) {
+		error("failed to create qr code for: %s", strdata);
+		return -1;
+	}
+
+	width = qrcode->width;
+	if (resize) {
+		rwidth = __get_resize_width(width);
+		ret = __resize_img_rawdata(&resizedata, qrcode->data, width, rwidth);
+		if (ret < 0)
+			mxrec_cleanup(cleanup, ret, ret);
+		ret = __writeQRUTF8(resizedata, rwidth, margin, outfile, use_ansi, invert);
+	} else {
+		resizedata = NULL;
+		ret = __writeQRUTF8(qrcode->data, width, margin, outfile, use_ansi, invert);
+	}
+
+cleanup:
+	QRcode_free(qrcode);
+	xfree(resizedata);
+
+	return 0;
 }
