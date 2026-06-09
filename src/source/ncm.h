@@ -7,6 +7,6 @@ typedef struct ncm_source ncm_source;
 
 int ncm_source_new(source **src, config_t *cfg);
 
-int ncm_get_auth(source *s);
+void ncm_get_auth(source *s);
 
 #endif

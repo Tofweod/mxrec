@@ -7,6 +7,7 @@
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
+#include "utils/image.h"
 #include "utils/string.h"
 #include "xmalloc.h"
 #include "yyjson/src/yyjson.h"
@@ -98,7 +99,7 @@ int ncm_wait_ready(pid_t pid, int fd, int timeout)
 NCM_DECL
 int ncm_module_init(ncm_module *M, ncm_address_type type, const char *address, int port, const char *work_dir)
 {
-	int ret, pipefd[2];
+	int pipefd[2];
 	M->pid = -1;
 	M->status = NULL;
 
@@ -249,6 +250,108 @@ char *ncm_get_url(ncm_source *s, ncm_address_type type, const ncm_module_entry e
 	return NULL;
 }
 
+// ncm ipc json parser
+#define JSON_ERR_HEAD "NCM"
+typedef struct ncm_json_msg {
+	yyjson_doc *doc;
+	bool success;
+	int code;
+	union {
+		char *err_msg;
+		yyjson_val *data;
+	};
+} ncm_json_msg;
+
+NCM_DECL
+void ncm_json_msg_free(ncm_json_msg *msg)
+{
+	if (msg == NULL)
+		return;
+	if (!msg->success && !msg->code) {
+		xfree(msg->err_msg);
+	}
+	assert(msg->success);
+	yyjson_doc_free(msg->doc);
+}
+
+NCM_DECL
+int ncm_curlbuf2json_msg(ncm_json_msg *msg, curlbuf *buf, struct json_err *jerr)
+{
+	yyjson_doc *doc;
+	yyjson_read_err err;
+	yyjson_val *root;
+	bool success;
+	int code;
+
+	doc = yyjson_read_opts(buf->buf, buf->len, 0, 0, &err);
+	if (doc == NULL) {
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
+			      err.msg, err.code, err.pos);
+		msg->doc = NULL;
+		return -1;
+	}
+	msg->doc = doc;
+	root = yyjson_doc_get_root(doc);
+
+	success = yyjson_get_bool(yyjson_obj_get(root, "success"));
+	code = yyjson_get_int(yyjson_obj_get(root, "code"));
+
+	msg->success = success;
+	msg->code = code;
+
+	if (!success && !code) {
+		msg->err_msg = xstrdup(yyjson_get_str(yyjson_obj_get(root, "msg")));
+	} else {
+		msg->data = yyjson_obj_get(root, "data");
+	}
+	return 0;
+}
+
+NCM_DECL
+char *ncm_curlbuf2key(curlbuf *buf, struct json_err *jerr)
+{
+	yyjson_val *val;
+	char *key;
+	ncm_json_msg msg = {0};
+	if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0)
+		mxrec_cleanup(cleanup, key, 0);
+
+	if (!msg.success && !msg.code) {
+		write_jsonerr(jerr, "failed to create qr key:%s", msg.err_msg);
+		mxrec_cleanup(cleanup, key, 0);
+	}
+
+	// data.body.data.unikey
+	val = YYJSON_GET(msg.data, "body", "data", "unikey");
+	key = xstrdup(yyjson_get_str(val));
+
+cleanup:
+	ncm_json_msg_free(&msg);
+	return key;
+}
+
+NCM_DECL
+char *ncm_curlbuf2qr_create_url(curlbuf *buf, struct json_err *jerr)
+{
+	yyjson_val *val;
+	char *url;
+	ncm_json_msg msg = {0};
+	if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0)
+		mxrec_cleanup(cleanup, url, 0);
+
+	if (!msg.success && !msg.code) {
+		write_jsonerr(jerr, "failed to create url of qrcode:%s", msg.err_msg);
+		mxrec_cleanup(cleanup, url, 0);
+	}
+
+	// data.body.data.qrurl
+	val = YYJSON_GET(msg.data, "body", "data", "qrurl");
+	url = xstrdup(yyjson_get_str(val));
+cleanup:
+	ncm_json_msg_free(&msg);
+	return url;
+}
+
 // ncm curl
 NCM_DECL
 int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
@@ -353,13 +456,117 @@ bool ncm_config_check(source *s)
 }
 
 NCM_DECL
-int ncm_get_cookie_by_qr(ncm_source *s)
+int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char *key, int timeout, int interval,
+		 char **cookie_ref)
 {
+	ncm_json_msg msg = {0};
+	int ret, elapsed_ms, timeout_ms;
+	int code;
+	elapsed_ms = 0;
+	timeout_ms = timeout * 1000;
+	char *cookie = NULL;
+
+	assert(cookie_ref);
+
+	while (elapsed_ms < timeout_ms) {
+		if ((ret = ncm_curl(s, buf, LOGIN_QR_CHECK, MAKE_KV("key", key))) < 0) {
+			mxrec_cleanup(end, ret, -2);
+		}
+		if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0) {
+			mxrec_cleanup(end, ret, -2);
+		}
+		curlbuf_clear(buf);
+		if (!msg.success && !msg.code)
+			mxrec_cleanup(end, ret, -2);
+
+		// data.body.code
+		code = yyjson_get_int(YYJSON_GET(msg.data, "body", "code"));
+#if 0
+		char *info = xstrdup(yyjson_get_str(YYJSON_GET(msg.data, "body", "message")));
+		printf("Current status\n%d:%s\n", code, info);
+		xfree(info);
+#endif
+		switch (code) {
+		case 500: {
+			write_jsonerr("failed to login:%s", "need \"nocookie\" parameter");
+			mxrec_cleanup(end, ret, -2);
+		}
+		case 800: {
+			write_jsonerr("failed to login:%s", "qrcode has been expired");
+			mxrec_cleanup(end, ret, -1);
+		}
+		case 801:
+		case 802:
+			break;
+		case 803: {
+			// data.body.cookie
+			cookie = xstrdup(yyjson_get_str(YYJSON_GET(msg.data, "body", "cookie")));
+			mxrec_cleanup(end, ret, 0);
+		}
+		}
+
+		struct timeval tv = {
+			.tv_sec = interval / 1000,
+			.tv_usec = (interval % 1000) * 1000,
+		};
+
+		select(0, 0, 0, 0, &tv);
+		elapsed_ms += interval;
+		ncm_json_msg_free(&msg);
+	}
+end:
+	// timeout
+	if (elapsed_ms >= timeout_ms)
+		ret = -1;
+	ncm_json_msg_free(&msg);
+	*cookie_ref = cookie;
+	return ret;
+}
+
+NCM_DECL
+void ncm_get_cookie_by_qr(ncm_source *s)
+{
+	int ret;
+	char *key = NULL, *url = NULL, *cookie = NULL;
+	struct json_err jerr;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
-	ncm_curl(s, &buf, LOGIN_QR_KEY);
+	if ((ret = ncm_curl(s, &buf, LOGIN_QR_KEY)) < 0) {
+		mxrec_cleanup(cleanup, ret, ret);
+	}
 
-	return 0;
+	key = ncm_curlbuf2key(&buf, &jerr);
+	if (key == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+	curlbuf_clear(&buf);
+
+	if ((ret = ncm_curl(s, &buf, LOGIN_QR_CREATE, MAKE_KV("key", key))) < 0) {
+		mxrec_cleanup(cleanup, ret, ret);
+	}
+
+	url = ncm_curlbuf2qr_create_url(&buf, &jerr);
+	if (url == NULL)
+		mxrec_cleanup(cleanup, ret, -1);
+	curlbuf_clear(&buf);
+
+	printf("[INFO]: Please scan the QRCode from Netease Music APP to get cookie\n");
+	if (strwriteQR(url, NULL, 2, 0, 0, 1) < 0)
+		mxrec_cleanup(cleanup, ret, -1);
+
+	ret = ncm_qr_check(s, &buf, &jerr, key, 60 * 1000, 1000, &cookie);
+
+	if (!ret && cookie)
+		printf("[INFO]: cookie of NCM is:\n%s\n", cookie);
+	else if (ret == -1)
+		printf("[INFO]: QR Code has been expired, please generate again.\n");
+	else
+		error("failed to get cookie from QRCode");
+
+cleanup:
+	xfree(key);
+	xfree(url);
+	xfree(cookie);
+	curlbuf_free(&buf);
 }
 
 // EXPOSE
@@ -376,9 +583,9 @@ int ncm_source_new(source **src, config_t *cfg)
 	return 0;
 }
 
-int ncm_get_auth(source *s)
+void ncm_get_auth(source *s)
 {
 	if (s == NULL)
-		return -1;
-	return ncm_get_cookie_by_qr((ncm_source *)s);
+		return;
+	ncm_get_cookie_by_qr((ncm_source *)s);
 }
