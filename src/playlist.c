@@ -1,18 +1,67 @@
 #include "playlist.h"
 #include "da.h"
+#include "dump.h"
 #include "track.h"
 #include "xmalloc.h"
 #include <stddef.h>
 #include <string.h>
 
-static dumpType playlistDumpType = {
+// dump
+static void playitemdump2json(FILE *fp, void *ptr)
+{
+	if (ptr == NULL)
+		return;
+	playitem *pi = (playitem *)ptr;
+	unsigned i;
 
+	fprintf(fp, "{");
+
+	 /* track */
+	fprintf(fp, "\"track\":");
+	if (pi->tr && pi->tr->dh && pi->tr->dh->dump2json)
+		pi->tr->dh->dump2json(fp, pi->tr);
+
+	/* urls */
+	fprintf(fp, ",\"urls\":[");
+	for (i = 0; i < pi->url_size; ++i) {
+		if (i > 0)
+			fprintf(fp, ",");
+		fprintf(fp, "\"%s\"", pi->urls[i]);
+	}
+	fprintf(fp, "]");
+
+	fprintf(fp, "}");
+}
+
+static void playlistdump2json(FILE *fp, size_t len, void *ptr)
+{
+	if (ptr == NULL)
+		return;
+	size_t i;
+	playlist p = *(playlist *)ptr;
+
+	fprintf(fp, "{");
+
+	fprintf(fp, "\"playlist\":[");
+	for (i = 0; i < len; ++i) {
+		if (i > 0)
+			fprintf(fp, ",");
+		playitemdump2json(fp, &p[i]);
+	}
+	fprintf(fp, "]");
+
+	fprintf(fp, "}");
+}
+
+static dumpHandle playitemDumpType = {
+	.dump2json = playitemdump2json,
+	.listdump2json = playlistdump2json,
 };
 
 void playitem_init(playitem *pi)
 {
 	memset(pi, 0, sizeof(*pi));
-	pi->dt = &playlistDumpType;
+	pi->dh = &playitemDumpType;
 }
 
 int playitem_addurl(playitem *pi, const char *url)

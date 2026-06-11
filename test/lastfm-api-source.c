@@ -1,4 +1,6 @@
 #include "config.h"
+#include "da.h"
+#include "dump.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
@@ -21,7 +23,8 @@ int main()
 		return 1;
 	}
 
-	if ((ret = recomm_multi(s,5, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
+	if ((ret = recomm_multi(s, 5, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
+		dump(p->dh, stdout, &p, da_len(p), DUMP2JSON);
 		playlist_free(p);
 		printf("ret of recomm_multi is %d\n", ret);
 	}

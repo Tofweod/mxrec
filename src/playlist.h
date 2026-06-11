@@ -7,7 +7,7 @@ typedef struct track track;
 #define MAX_URL_SIZE 512
 
 typedef struct playitem {
-	dumpType *dt;
+	dumpHandle *dh;
 	track *tr;
 	unsigned int url_size;
 	unsigned int url_alloc;

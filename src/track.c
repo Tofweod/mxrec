@@ -1,15 +1,45 @@
 #include "track.h"
 #include "artist.h"
 #include "assert.h"
+#include "dump.h"
 #include "xmalloc.h"
 #include <string.h>
 
-static void trackdump2json(void *tr)
+static void trackdump2json(FILE *fp, void *ptr)
 {
-	// TODO
+	if (ptr == NULL)
+		return;
+	track *tr = (track *)ptr;
+	unsigned i;
+
+	fprintf(fp, "{");
+	/* title */
+	fprintf(fp, "\"title\":\"%s\"", (const char *)tr->title);
+	/* album */
+	fprintf(fp, ",\"album\":\"%s\"", (const char *)tr->album);
+	/* artists */
+	fprintf(fp, ",\"artists\":[");
+	for (i = 0; i < tr->ar_size; ++i) {
+		if (i > 0)
+			fprintf(fp, ",");
+		artist *ar = tr->artists[i];
+		if (ar && ar->dh && ar->dh->dump2json)
+			ar->dh->dump2json(fp, ar);
+	}
+	fprintf(fp, "]");
+	/* alias */
+	fprintf(fp, ",\"alias\":[");
+	for (i = 0; i < tr->alia_size; ++i) {
+		if (i > 0)
+			fprintf(fp, ",");
+		fprintf(fp, "\"%s\"", (const char *)tr->alias[i]);
+	}
+	fprintf(fp, "]");
+
+	fprintf(fp, "}");
 }
 
-static dumpType trackDumpType = {
+static dumpHandle trackDumpType = {
 	.dump2json = trackdump2json,
 	.listdump2json = NULL,
 };
@@ -20,7 +50,7 @@ void *track_new(const char *title, const char *album, unsigned int ar_size, arti
 	unsigned int i;
 	track *tr = xmalloc(sizeof(track) + sizeof(u8s) * alia_size);
 	memset(tr, 0, sizeof(*tr));
-	tr->dt = &trackDumpType;
+	tr->dh = &trackDumpType;
 
 	tr->title = u8snew(title);
 	tr->album = u8snew(album);

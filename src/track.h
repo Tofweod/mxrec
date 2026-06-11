@@ -7,7 +7,7 @@
 typedef struct artist artist;
 
 typedef struct track {
-	dumpType *dt;
+	dumpHandle *dh;
 	u8s title;
 	artist **artists;
 	unsigned int ar_size;

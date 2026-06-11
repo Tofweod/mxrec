@@ -1,14 +1,34 @@
 #include "artist.h"
 #include "assert.h"
+#include "dump.h"
 #include "xmalloc.h"
 #include <string.h>
 
-static void artist_dump2json(void *ar)
+static void artist_dump2json(FILE *fp, void *ptr)
 {
-	// TODO
+	if (ptr == NULL)
+		return;
+	artist *ar = (artist *)ptr;
+	unsigned i;
+
+	fprintf(fp, "{");
+
+	/* name */
+	fprintf(fp, "\"name\":\"%s\"", (const char *)ar->name);
+
+	/* alias */
+	fprintf(fp, ",\"alias\":[");
+	for (i = 0; i < ar->alia_size; ++i) {
+		if (i > 0)
+			fprintf(fp, ",");
+		fprintf(fp, "\"%s\"", (const char *)ar->alias[i]);
+	}
+	fprintf(fp, "]");
+
+	fprintf(fp, "}");
 }
 
-static dumpType artistDumpType = {
+static dumpHandle artistDumpType = {
 	.dump2json = artist_dump2json,
 };
 
@@ -18,7 +38,7 @@ artist *artist_new(const char *name, unsigned int alia_size, const char *alias[]
 	artist *ar = xmalloc(sizeof(artist) + sizeof(u8s) * alia_size);
 	memset(ar, 0, sizeof(*ar));
 	ar->name = u8snew(name);
-	ar->dt = &artistDumpType;
+	ar->dh = &artistDumpType;
 
 	assert((alia_size > 0 && alias) || (!alia_size && !alias));
 	for (i = 0; i < alia_size; ++i) {

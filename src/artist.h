@@ -5,7 +5,7 @@
 #include "u8string.h"
 
 typedef struct artist {
-	dumpType *dt;
+	dumpHandle *dh;
 	u8s name;
 	unsigned int alia_size;
 	u8s alias[];
