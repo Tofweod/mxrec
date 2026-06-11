@@ -20,13 +20,14 @@
 	CONFIG_FIELD(unsigned, lastfmapi_diffusion_size, (void))                                                       \
 	CONFIG_FIELD(double, lastfmapi_random_lambda, (void))                                                          \
 	CONFIG_FIELD(double, lastfmapi_diff_lambda, (void))                                                            \
-	CONFIG_FIELD(double, lastfmapi_score_beta, (void))                                                            \
+	CONFIG_FIELD(double, lastfmapi_score_beta, (void))                                                             \
 	CONFIG_FIELD(char *, lastfmweb_base_url, xfree)                                                                \
 	CONFIG_FIELD(char *, lastfmweb_recomm_path, xfree)                                                             \
 	CONFIG_FIELD(char *, lastfmweb_recomm_method, xfree)                                                           \
 	CONFIG_FIELD(char *, lastfmweb_recomm_parameter, xfree)                                                        \
 	CONFIG_FIELD(char *, lastfmweb_recomm_accept, xfree)                                                           \
-	CONFIG_FIELD(char *, ncm_cookie, xfree)                                                                        \
+	CONFIG_FIELD(u8s, ncm_username, u8sfree)                                                                       \
+	CONFIG_FIELD(char *, ncm_cookie_file, xfree)                                                                        \
 	CONFIG_FIELD(char *, ncm_work_dir, xfree)                                                                      \
 	CONFIG_FIELD(char *, ncm_bind_method, xfree)                                                                   \
 	CONFIG_FIELD(char *, ncm_bind_address, xfree)                                                                  \

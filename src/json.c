@@ -4,6 +4,8 @@
 
 void write_jsonerr(void *err, const char *fmt, ...)
 {
+	if(err == NULL) 
+		return;
 	struct json_err *error = (struct json_err *)err;
 	va_list args;
 	va_start(args, fmt);

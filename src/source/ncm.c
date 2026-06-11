@@ -4,15 +4,19 @@
 #include "comm.h"
 #include "config.h"
 #include "json.h"
+#include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
+#include "u8string.h"
+#include "utils/file.h"
 #include "utils/image.h"
 #include "utils/string.h"
 #include "xmalloc.h"
 #include "yyjson/src/yyjson.h"
 #include <curl/curl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -65,6 +69,9 @@ typedef struct ncm_module {
 	// TODO
 	char *status;
 } ncm_module;
+
+NCM_DECL
+bool ncm_module_is_running(ncm_module *M) { return M->pid != -1; }
 
 NCM_DECL
 int ncm_wait_ready(pid_t pid, int fd, int timeout)
@@ -183,6 +190,7 @@ static source __ncm_source = {
 struct ncm_source {
 	source src;
 	int port;
+	u8s username;
 	char *address;
 	ncm_address_type addr_type;
 	char *cookie;
@@ -194,6 +202,7 @@ struct ncm_source {
 NCM_DECL
 int ncm_source_init(void *sp, config_t *cfg)
 {
+	globalCurlInit();
 	ncm_source *s = (ncm_source *)sp;
 	s->src = __ncm_source;
 
@@ -207,17 +216,19 @@ int ncm_source_init(void *sp, config_t *cfg)
 	if (s->curl == NULL)
 		return -1;
 
+	s->username = u8sdup(cfg->ncm_username);
 	s->port = port;
 	s->address = xstrdup(address);
 	s->addr_type = type;
-	s->cookie = xstrdup(cfg->ncm_cookie);
-	return 0;
+	s->cookie = slurp(cfg->ncm_cookie_file);
+	return source_check(s);
 }
 
 NCM_DECL
 inline void ncm_source_destroy(void *sp)
 {
 	ncm_source *s = (ncm_source *)sp;
+	u8sfree(s->username);
 	xfree(s->address);
 	xfree(s->cookie);
 	curl_easy_cleanup(s->curl);
@@ -228,7 +239,8 @@ inline void ncm_source_destroy(void *sp)
 #define NCM_MODULE_ENTRY_LIST                                                                                          \
 	NCM_MODULE_ENTRY(LOGIN_QR_KEY, "/login/qr/key", 0)                                                             \
 	NCM_MODULE_ENTRY(LOGIN_QR_CREATE, "/login/qr/create", 1)                                                       \
-	NCM_MODULE_ENTRY(LOGIN_QR_CHECK, "/login/qr/check", 1)
+	NCM_MODULE_ENTRY(LOGIN_QR_CHECK, "/login/qr/check", 1)                                                         \
+	NCM_MODULE_ENTRY(LOGIN_STATUS, "/login/status", 1)
 
 typedef struct ncm_module_entry {
 	const char *path;
@@ -447,11 +459,59 @@ NCM_DECL
 void ncm_security_handle(source *s) {}
 
 NCM_DECL
+bool ncm_check_username(ncm_source *s)
+{
+	int cmp, cmp_result;
+	bool ret;
+	curlbuf buf;
+	ncm_json_msg msg = {0};
+	yyjson_val *val;
+	u8s username = NULL;
+
+	if (!ncm_module_is_running(&s->M))
+		return false;
+
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
+	if (ncm_curl(s, &buf, LOGIN_STATUS, MAKE_KV("cookie", s->cookie)) < 0) {
+		mxrec_cleanup(cleanup, ret, false);
+	}
+
+	if (ncm_curlbuf2json_msg(&msg, &buf, NULL) < 0) {
+		mxrec_cleanup(cleanup, ret, false);
+	}
+
+	if (!msg.success && !msg.code) {
+		mxrec_cleanup(cleanup, ret, false);
+	}
+
+	// data.body.data.profile.nickname
+	val = YYJSON_GET(msg.data, "body", "data", "profile", "nickname");
+	username = u8snew(yyjson_get_str(val));
+
+	cmp = u8scmp(username, s->username, &cmp_result);
+	if (cmp_result != U8S_OK) {
+		// TODO log
+		ret = false;
+	}
+	ret = cmp == 0;
+cleanup:
+	curlbuf_free(&buf);
+	ncm_json_msg_free(&msg);
+	u8sfree(username);
+	return ret;
+}
+
+NCM_DECL
 bool ncm_config_check(source *s)
 {
 	bool ret = true;
 	ncm_source *ns = (ncm_source *)s;
 	// TODO
+	// TODO check username match cookie
+	ret = ncm_check_username(ns);
+	if(!ret) {
+		error("username in cookie don't match username in config");
+	}
 	return ret;
 }
 
