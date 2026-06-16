@@ -62,3 +62,40 @@ char *slurp(const char *path)
 
 	return buf;
 }
+
+void fprintf_json_str(FILE *fp, const char *s)
+{
+	fputc('"', fp);
+	if (!s) {
+		fputc('"', fp);
+		return;
+	}
+
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+		switch (*p) {
+		case '"':
+			fputs("\\\"", fp);
+			break;
+		case '\\':
+			fputs("\\\\", fp);
+			break;
+		case '\n':
+			fputs("\\n", fp);
+			break;
+		case '\r':
+			fputs("\\r", fp);
+			break;
+		case '\t':
+			fputs("\\t", fp);
+			break;
+		default:
+			if (*p < 0x20)
+				fprintf(fp, "\\u%04x", *p);
+			else
+				fputc(*p, fp);
+			break;
+		}
+	}
+
+	fputc('"', fp);
+}

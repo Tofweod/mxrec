@@ -2,6 +2,7 @@
 #include "artist.h"
 #include "assert.h"
 #include "dump.h"
+#include "utils/file.h"
 #include "xmalloc.h"
 #include <string.h>
 
@@ -14,9 +15,11 @@ static void trackdump2json(FILE *fp, void *ptr)
 
 	fprintf(fp, "{");
 	/* title */
-	fprintf(fp, "\"title\":\"%s\"", (const char *)tr->title);
+	fprintf(fp, "\"title\":");
+	fprintf_json_str(fp, (const char *)tr->title);
 	/* album */
-	fprintf(fp, ",\"album\":\"%s\"", (const char *)tr->album);
+	fprintf(fp, ",\"album\":");
+	fprintf_json_str(fp, (const char *)tr->album);
 	/* artists */
 	fprintf(fp, ",\"artists\":[");
 	for (i = 0; i < tr->ar_size; ++i) {
@@ -32,7 +35,7 @@ static void trackdump2json(FILE *fp, void *ptr)
 	for (i = 0; i < tr->alia_size; ++i) {
 		if (i > 0)
 			fprintf(fp, ",");
-		fprintf(fp, "\"%s\"", (const char *)tr->alias[i]);
+		fprintf_json_str(fp, (const char *)tr->alias[i]);
 	}
 	fprintf(fp, "]");
 

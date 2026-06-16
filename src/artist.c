@@ -1,6 +1,7 @@
 #include "artist.h"
 #include "assert.h"
 #include "dump.h"
+#include "utils/file.h"
 #include "xmalloc.h"
 #include <string.h>
 
@@ -14,14 +15,15 @@ static void artist_dump2json(FILE *fp, void *ptr)
 	fprintf(fp, "{");
 
 	/* name */
-	fprintf(fp, "\"name\":\"%s\"", (const char *)ar->name);
+	fprintf(fp, "\"name\":");
+	fprintf_json_str(fp, (const char *)ar->name);
 
 	/* alias */
 	fprintf(fp, ",\"alias\":[");
 	for (i = 0; i < ar->alia_size; ++i) {
 		if (i > 0)
 			fprintf(fp, ",");
-		fprintf(fp, "\"%s\"", (const char *)ar->alias[i]);
+		fprintf_json_str(fp, (const char *)ar->alias[i]);
 	}
 	fprintf(fp, "]");
 

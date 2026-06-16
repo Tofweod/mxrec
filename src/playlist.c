@@ -2,6 +2,7 @@
 #include "da.h"
 #include "dump.h"
 #include "track.h"
+#include "utils/file.h"
 #include "xmalloc.h"
 #include <stddef.h>
 #include <string.h>
@@ -26,7 +27,7 @@ static void playitemdump2json(FILE *fp, void *ptr)
 	for (i = 0; i < pi->url_size; ++i) {
 		if (i > 0)
 			fprintf(fp, ",");
-		fprintf(fp, "\"%s\"", pi->urls[i]);
+		fprintf_json_str(fp, pi->urls[i]);
 	}
 	fprintf(fp, "]");
 
