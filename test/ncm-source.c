@@ -5,10 +5,10 @@
 
 int main()
 {
-	/* int ret; */
+	int ret;
 	config_t cfg = {0};
 	source *s;
-	/* playlist p; */
+	playlist p;
 	const char *configfile = "../config.ini";
 	if (!load_config(configfile, &cfg)) {
 		return 1;
@@ -19,7 +19,11 @@ int main()
 		return 1;
 	}
 
-	ncm_get_auth(s);
+	if ((ret = recomm_multi(s, 20, &p, .ncm_opts.daily_recomm_fresh = true)) > 0) {
+		dump(p->dh, stdout, &p, ret, DUMP2JSON);
+		playlist_free(p);
+		printf("ret of recomm_multi is %d\n", ret);
+	}
 
 	source_free(s);
 	configfree(&cfg);

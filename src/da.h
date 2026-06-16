@@ -22,6 +22,16 @@ struct da_hdr {
 		arr = (void *)((char *)hdr + DAHDRSIZE);                                                               \
 	} while (0)
 
+#define da_init2(arr, _size, cap)                                                                                      \
+	do {                                                                                                           \
+		assert(arr == NULL);                                                                                   \
+		struct da_hdr *hdr = xmalloc(DAHDRSIZE + _size * cap);                                                 \
+		hdr->len = 0;                                                                                          \
+		hdr->alloc = cap;                                                                                      \
+		hdr->size = _size;                                                                                     \
+		arr = (void *)((char *)hdr + DAHDRSIZE);                                                               \
+	} while (0)
+
 #define da_len(arr) (DAHDR(arr)->len)
 
 #define da_next_alloc(x) ((x) <= 1 ? 1 : (1u << (32 - __builtin_clz((x) - 1))))

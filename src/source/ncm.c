@@ -1,13 +1,16 @@
 #include "ncm.h"
+#include "artist.h"
 #include "assert.h"
 #include "bb.h"
 #include "comm.h"
 #include "config.h"
+#include "da.h"
 #include "json.h"
 #include "monotonic.h"
 #include "playlist.h"
 #include "source.h"
 #include "source/comm-source.h"
+#include "track.h"
 #include "u8string.h"
 #include "utils/file.h"
 #include "utils/image.h"
@@ -240,7 +243,8 @@ inline void ncm_source_destroy(void *sp)
 	NCM_MODULE_ENTRY(LOGIN_QR_KEY, "/login/qr/key", 0)                                                             \
 	NCM_MODULE_ENTRY(LOGIN_QR_CREATE, "/login/qr/create", 1)                                                       \
 	NCM_MODULE_ENTRY(LOGIN_QR_CHECK, "/login/qr/check", 1)                                                         \
-	NCM_MODULE_ENTRY(LOGIN_STATUS, "/login/status", 1)
+	NCM_MODULE_ENTRY(LOGIN_STATUS, "/login/status", 1)                                                             \
+	NCM_MODULE_ENTRY(RECOMM_DAILY_SONGS, "/recommend/daily/songs", 2)
 
 typedef struct ncm_module_entry {
 	const char *path;
@@ -279,11 +283,12 @@ void ncm_json_msg_free(ncm_json_msg *msg)
 {
 	if (msg == NULL)
 		return;
+	yyjson_doc_free(msg->doc);
 	if (!msg->success && !msg->code) {
 		xfree(msg->err_msg);
+		return;
 	}
 	assert(msg->success);
-	yyjson_doc_free(msg->doc);
 }
 
 NCM_DECL
@@ -362,6 +367,103 @@ char *ncm_curlbuf2qr_create_url(curlbuf *buf, struct json_err *jerr)
 cleanup:
 	ncm_json_msg_free(&msg);
 	return url;
+}
+
+NCM_DECL
+artist *ncm_json2artist(yyjson_val *val, struct json_err *jerr)
+{
+	artist *ar;
+	size_t i, alia_size;
+	const char *name, **als;
+	yyjson_val *alias, *alia;
+
+	name = yyjson_get_str(YYJSON_GET(val, "name"));
+	alias = YYJSON_GET(val, "alias");
+	alia_size = yyjson_arr_size(alias);
+	if (alia_size == 0) {
+		als = NULL;
+	} else {
+		als = xmalloc(alia_size * sizeof(*als));
+		yyjson_arr_foreach(alias, i, alia_size, alia) { als[i] = yyjson_get_str(alia); }
+	}
+
+	ar = artist_new(name, alia_size, als);
+	xfree(als);
+	return ar;
+}
+
+NCM_DECL
+void ncm_json2playitem(yyjson_val *val, playitem *pi, struct json_err *jerr)
+{
+	track *tr;
+	const char *name, *album;
+	const char **als;
+	artist **ars;
+	size_t i, ar_size, alia_size;
+	yyjson_val *artists, *artist, *alias, *alia;
+	playitem_init(pi);
+
+	name = yyjson_get_str(YYJSON_GET(val, "name"));
+	album = yyjson_get_str(YYJSON_GET(val, "al", "name"));
+
+	artists = YYJSON_GET(val, "ar");
+	ar_size = yyjson_arr_size(artists);
+	ars = xmalloc(sizeof(*ars) * ar_size);
+
+	yyjson_arr_foreach(artists, i, ar_size, artist) { ars[i] = ncm_json2artist(artist, jerr); }
+
+	alias = YYJSON_GET(val, "alia");
+	alia_size = yyjson_arr_size(alias);
+	if (alia_size == 0) {
+		als = NULL;
+	} else {
+		als = xmalloc(alia_size * sizeof(*als));
+		yyjson_arr_foreach(alias, i, alia_size, alia) { als[i] = yyjson_get_str(alia); }
+	}
+	tr = track_new(name, album, ar_size, ars, alia_size, als);
+	pi->tr = tr;
+	xfree(als);
+	// NO urls
+}
+
+NCM_DECL
+int ncm_curlbuf2playlist(curlbuf *buf, size_t num, playlist *pl_ref, struct json_err *jerr)
+{
+	int ret;
+	ncm_json_msg msg = {0};
+	playlist p = NULL;
+	size_t i, len;
+	yyjson_val *songs, *song;
+
+	if ((ret = ncm_curlbuf2json_msg(&msg, buf, jerr)) < 0) {
+		mxrec_cleanup(cleanup, ret, ret);
+	}
+
+	if (!msg.success && !msg.code) {
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	// data.body.data.dailySongs
+	songs = YYJSON_GET(msg.data, "body", "data", "dailySongs");
+	if (!yyjson_is_arr(songs)) {
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+
+	// TODO num copmares len
+	len = yyjson_arr_size(songs);
+	da_init2(p, sizeof(playitem), len);
+	yyjson_arr_foreach(songs, i, len, song)
+	{
+		ncm_json2playitem(song, &p[i], jerr);
+		DAHDR(p)->len++;
+	}
+	assert(DAHDR(p)->len == len);
+	ret = len;
+
+cleanup:
+	*pl_ref = p;
+	ncm_json_msg_free(&msg);
+	return ret;
 }
 
 // ncm curl
@@ -444,15 +546,50 @@ cleanup:
 }
 
 NCM_DECL
-int ncm_recomm_single(source *s, playitem *p, recomm_option opts)
+char *ncm_bool2str(bool val)
+{
+	// true or false
+	char *str = xmalloc(6);
+	memset(str, 0, 6);
+	if (val)
+		strncpy(str, "true", 4);
+	else
+		strncpy(str, "false", 5);
+	return str;
+}
+
+NCM_DECL int ncm_recomm_single(source *s, playitem *p, recomm_option opts)
 {
 	// TODO
+	return -1;
 }
 
 NCM_DECL
 int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 {
-	// TODO
+	int ret;
+	ncm_source *ns = (ncm_source *)s;
+	curlbuf buf;
+	struct json_err jerr;
+	jerr.length = 0;
+	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
+	char *fresh_str = NULL;
+
+	fresh_str = ncm_bool2str(opts.ncm_opts.daily_recomm_fresh);
+	if ((ret = ncm_curl(ns, &buf, RECOMM_DAILY_SONGS, MAKE_KV("cookie", ns->cookie),
+			    MAKE_KV("afresh", fresh_str))) < 0) {
+		mxrec_cleanup(cleanup, ret, ret);
+	}
+
+	if ((ret = ncm_curlbuf2playlist(&buf, num, p, &jerr)) < 0) {
+		error("failed to extract playlist from json:%s", jerr.msg);
+		mxrec_cleanup(cleanup, ret, ret);
+	}
+
+cleanup:
+	xfree(fresh_str);
+	curlbuf_free(&buf);
+	return ret;
 }
 
 NCM_DECL
@@ -501,15 +638,26 @@ cleanup:
 	return ret;
 }
 
+#define check(expr, val)                                                                                               \
+	do {                                                                                                           \
+		if (!(expr)) {                                                                                         \
+			(val) = false;                                                                                 \
+			error("ncm source init failed on %s", (#expr));                                                \
+		}                                                                                                      \
+	} while (0)
+
 NCM_DECL
 bool ncm_config_check(source *s)
 {
 	bool ret = true;
 	ncm_source *ns = (ncm_source *)s;
-	// TODO
-	// TODO check username match cookie
+	check(ns->username != NULL, ret);
+	check(ns->address != NULL, ret);
+	check(ns->addr_type != NCM_NONE_ADDRESS, ret);
+	check(ns->cookie != NULL, ret);
+	check(ncm_module_is_running(&ns->M), ret);
 	ret = ncm_check_username(ns);
-	if(!ret) {
+	if (!ret) {
 		error("username in cookie don't match username in config");
 	}
 	return ret;
@@ -589,6 +737,7 @@ void ncm_get_cookie_by_qr(ncm_source *s)
 	int ret;
 	char *key = NULL, *url = NULL, *cookie = NULL;
 	struct json_err jerr;
+	jerr.length = 0;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	if ((ret = ncm_curl(s, &buf, LOGIN_QR_KEY)) < 0) {
