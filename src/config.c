@@ -62,7 +62,6 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	// ncm
 	cfg->ncm_username = u8snew(iniparser_getstring(d, "ncm:username", NULL));
 	cfg->ncm_work_dir = xstrdup(iniparser_getstring(d, "ncm:work-dir", NULL));
-	cfg->ncm_work_dir = xstrdup(iniparser_getstring(d, "ncm:work-dir", NULL));
 	cfg->ncm_cookie_file = xstrdup(iniparser_getstring(d, "ncm:cookie-file", NULL));
 	cfg->ncm_bind_method = xstrdup(iniparser_getstring(d, "ncm:bind-method", "http"));
 	cfg->ncm_bind_address = xstrdup(iniparser_getstring(d, "ncm:bind-address", "127.0.0.1"));

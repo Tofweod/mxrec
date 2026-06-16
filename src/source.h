@@ -33,6 +33,27 @@ typedef struct recomm_option {
 
 	bool strict;
 	bool use_security;
+
+	union {
+		// lastfm api
+		struct {
+			/**
+			 * Diffusion should be positive, representing the maximum diffusion level.
+			 */
+			unsigned diffusion;
+			unsigned diff_size;
+
+			double random_lambda;
+			double diff_lambda;
+			double score_beta;
+		} lastfmapi_opts;
+
+		// ncm
+		struct {
+			bool daily_recomm_fresh;
+		} ncm_opts;
+	};
+
 } recomm_option;
 
 // function field

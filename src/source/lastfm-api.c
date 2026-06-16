@@ -28,6 +28,13 @@
 
 #define JSON_ERR_HEAD "LASTFMWEB"
 
+// methods of api
+#define LASTFMAPI_FORMAT "json"
+#define LASTFMAPI_USER_GETRECENTTRACKS "user.getRecentTracks"
+#define LASTFMAPI_TRACK_GETSIMILAR "track.getSimilar"
+#define LASTFMAPI_ARTIST_GETSIMILAR "artist.getSimilar"
+#define LASTFMAPI_ARTIST_GETTOPTRACKS "artist.getTopTracks"
+
 // curlbuf
 #define CURLBUF_DEFAULT_CAP (1024)
 BUFFERBUILDER_INIT(LASTFMAPI_DECL, curlbuf, curlbuf, void);
@@ -241,13 +248,13 @@ int lastfmapi_latrack2playitem(la_track *ltr, playitem *pi)
 }
 
 // core: diffusion recommendation
-typedef enum diffusion_strategy {
-	DIFFUSION_ERR = 0,
-	DIFFUSION_BFS = 1,
-	DIFFUSION_DFS = 1 << 1,
-	DIFFUSION_TOPN = 1 << 2,
-	DIFFUSION_RAMSAMPLE = 1 << 3,
-} diffusion_strategy;
+typedef enum lastfm_diffusion_strategy {
+	LASTFMAPI_DIFFUSION_ERR = 0,
+	LASTFMAPI_DIFFUSION_BFS = 1,
+	LASTFMAPI_DIFFUSION_DFS = 1 << 1,
+	LASTFMAPI_DIFFUSION_TOPN = 1 << 2,
+	LASTFMAPI_DIFFUSION_RAMSAMPLE = 1 << 3,
+} lastfmapi_diffusion_strategy;
 
 // data structure of dfs and bfs strategy diffusion
 typedef struct df_deque df_deque;
@@ -349,24 +356,24 @@ df_deque df_queue = {
 };
 
 LASTFMAPI_DECL
-diffusion_strategy str2strategy(const char *s)
+lastfmapi_diffusion_strategy str2strategy(const char *s)
 {
 	const char *err_strategy;
 	if (s == NULL)
 		mxrec_cleanup(err, err_strategy, "NULL");
 	if (strcmp(s, "bfs") == 0)
-		return DIFFUSION_BFS;
+		return LASTFMAPI_DIFFUSION_BFS;
 	else if (strcmp(s, "dfs") == 0)
-		return DIFFUSION_DFS;
+		return LASTFMAPI_DIFFUSION_DFS;
 	else if (strcmp(s, "topn") == 0)
-		return DIFFUSION_TOPN;
+		return LASTFMAPI_DIFFUSION_TOPN;
 	else if (strcmp(s, "random") == 0)
-		return DIFFUSION_RAMSAMPLE;
+		return LASTFMAPI_DIFFUSION_RAMSAMPLE;
 	else
 		mxrec_cleanup(err, err_strategy, s);
 err:
 	error("failed to convert %s into diffusion_strategy", err_strategy);
-	return DIFFUSION_ERR;
+	return LASTFMAPI_DIFFUSION_ERR;
 }
 
 LASTFMAPI_DECL
@@ -432,19 +439,19 @@ size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, unsigned diff,
 
 LASTFMAPI_DECL
 size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
-				  diffusion_strategy strategy, const la_track *map, la_track ***res,
+				  lastfmapi_diffusion_strategy strategy, const la_track *map, la_track ***res,
 				  lastfmapi_source *ls, recomm_option opts);
 LASTFMAPI_DECL
 int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, diffusion_strategy strategy, int diffusion, time_t period, size_t target,
-			       size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+void _lastfmapi_diffusion_core(la_track **src, lastfmapi_diffusion_strategy strategy, int diffusion, time_t period,
+			       size_t target, size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
 			       recomm_option opts);
 
 LASTFMAPI_DECL
-int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusion_strategy strategy, la_track *map,
-			       playlist *p, int diffusion, time_t period, size_t target);
+int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_track *map, playlist *p, time_t period,
+			       size_t target);
 
 // la_track json parsing
 LASTFMAPI_DECL
@@ -557,16 +564,8 @@ struct lastfmapi_source {
 	char *base_url;
 	char *key;
 	char *period;
-	/**
-	 * Diffusion should be positive, representing the maximum diffusion level.
-	 */
-	unsigned diffusion;
-	unsigned diff_size;
-	diffusion_strategy strategy;
 
-	double random_lambda;
-	double diff_lambda;
-	double score_beta;
+	lastfmapi_diffusion_strategy strategy;
 };
 
 LASTFMAPI_DECL
@@ -690,13 +689,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	s->base_url = xstrdup(cfg->lastfmapi_base_url);
 	s->key = xstrdup(cfg->lastfmapi_key);
 	s->period = xstrdup(cfg->lastfmapi_period);
-	s->diffusion = cfg->lastfmapi_diffusion_level;
-	assert(s->diffusion > 0);
-	s->diff_size = cfg->lastfmapi_diffusion_size;
 	s->strategy = str2strategy(cfg->lastfmapi_strategy) | str2strategy(cfg->lastfmapi_sample);
-	s->random_lambda = cfg->lastfmapi_random_lambda;
-	s->diff_lambda = cfg->lastfmapi_diff_lambda;
-	s->score_beta = cfg->lastfmapi_score_beta;
 	return source_check(s);
 }
 
@@ -714,12 +707,13 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 }
 
 LASTFMAPI_DECL
-int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusion_strategy strategy, la_track *map,
-			       playlist *p, int diffusion, time_t period, size_t target)
+int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_track *map, playlist *p, time_t period,
+			       size_t target)
 {
 	int ret;
 	size_t i, cur_num = 0;
 	size_t idx, *idxs, map_size;
+	lastfmapi_diffusion_strategy strategy = ls->strategy;
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(hh, map));
 #endif
@@ -728,15 +722,16 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusi
 	// sentinel
 	memset(src, 0, (target + 1) * sizeof(*src));
 	// Top N diffusion or RANDOM
-	if (strategy & DIFFUSION_TOPN) {
+	if (strategy & LASTFMAPI_DIFFUSION_TOPN) {
 		for (i = 0, cur = map; cur && i < target; ++i, cur = cur->hh.next) {
 			src[i] = cur;
 		}
-	} else if (strategy & DIFFUSION_RAMSAMPLE) {
+	} else if (strategy & LASTFMAPI_DIFFUSION_RAMSAMPLE) {
 		map_size = HASH_CNT(hh, map);
 		idxs = xmalloc(sizeof(*idxs) * target);
 		assert(target > 0);
-		if (_lastfmapi_recomm_random_sample(target, idxs, 0, map_size - 1, ls->random_lambda) == 0)
+		if (_lastfmapi_recomm_random_sample(target, idxs, 0, map_size - 1, opts.lastfmapi_opts.random_lambda) ==
+		    0)
 			mxrec_cleanup(cleanup, ret, -1);
 
 		for (idx = 0, i = 0, cur = map; cur && idx < target; ++i, cur = cur->hh.next) {
@@ -748,7 +743,8 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, diffusi
 	}
 
 	assert(src[0]);
-	_lastfmapi_diffusion_core(src, strategy, diffusion, period, target, &cur_num, map, p, ls, opts);
+	_lastfmapi_diffusion_core(src, strategy, opts.lastfmapi_opts.diffusion, period, target, &cur_num, map, p, ls,
+				  opts);
 	ret = cur_num;
 cleanup:
 	xfree(idxs);
@@ -757,11 +753,11 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, diffusion_strategy strategy, int diffusion, time_t period, size_t target,
-			       size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+void _lastfmapi_diffusion_core(la_track **src, lastfmapi_diffusion_strategy strategy, int diffusion, time_t period,
+			       size_t target, size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
 			       recomm_option opts)
 {
-	size_t i, child_size;
+	size_t i, child_size, diff_num;
 	la_track *cur, **res, **child;
 	playlist pl = NULL;
 	playitem pi;
@@ -776,7 +772,8 @@ void _lastfmapi_diffusion_core(la_track **src, diffusion_strategy strategy, int 
 cleanup_child:
 		da_free(child);
 	}
-	if (_lastfmapi_latracks_score(res, da_len(res), ls->diff_lambda, period, ls->score_beta) < 0) {
+	if (_lastfmapi_latracks_score(res, da_len(res), opts.lastfmapi_opts.diff_lambda, period,
+				      opts.lastfmapi_opts.score_beta) < 0) {
 		da_free(res);
 		return;
 	}
@@ -789,7 +786,10 @@ cleanup_child:
 #endif
 
 	da_init(pl, sizeof(playitem));
-	for (i = 0; i < target; ++i) {
+	diff_num = *cur_num;
+	diff_num = target < diff_num ? target : diff_num;
+	*cur_num = diff_num;
+	for (i = 0; i < diff_num; ++i) {
 		lastfmapi_latrack2playitem(res[i], &pi);
 		da_append(pl, pi);
 	}
@@ -802,23 +802,23 @@ cleanup_child:
 
 LASTFMAPI_DECL
 size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
-				  diffusion_strategy strategy, const la_track *map, la_track ***res,
+				  lastfmapi_diffusion_strategy strategy, const la_track *map, la_track ***res,
 				  lastfmapi_source *ls, recomm_option opts)
 {
 	df_deque dq;
 	la_track *cur, *find, *str, *sar, **sim_trs, **sim_ars, **total_res;
 	size_t i, sim_tr_size, sim_ar_size, diff_size = 0, diff;
 
-	if (strategy & DIFFUSION_DFS)
+	if (strategy & LASTFMAPI_DIFFUSION_DFS)
 		dq = df_stack;
-	else if (strategy & DIFFUSION_BFS)
+	else if (strategy & LASTFMAPI_DIFFUSION_BFS)
 		dq = df_queue;
 	assert(dq.push && dq.pop);
 	df_deque_init(&dq, target);
 	dq.push(&dq, info);
 	total_res = NULL;
 	da_init(total_res, sizeof(*total_res));
-	diff = ls->diff_size;
+	diff = opts.lastfmapi_opts.diff_size;
 
 	while (!df_deque_empty(&dq)) {
 #ifdef LASTFMAPI_DEBUG
@@ -1268,6 +1268,30 @@ int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time
 	return 0;
 }
 
+LASTFMAPI_DECL
+int lastfmapi_check_opts(recomm_option opts, char **msg)
+{
+	int ret = 0;
+	StrBuffer sb;
+	sb_init(&sb, 128);
+	if (fabs(opts.lastfmapi_opts.random_lambda) < 1e-12) {
+		sb_append_str(&sb, "lastfmapi's random lambda must be positive.\n");
+		ret = -1;
+	}
+	if (fabs(opts.lastfmapi_opts.diff_lambda) < 1e-12) {
+		sb_append_str(&sb, "lastfmapi's diff lambda must be positive.\n");
+		ret = -1;
+	}
+	if (fabs(opts.lastfmapi_opts.score_beta) < 1e-12) {
+		sb_append_str(&sb, "lastfmapi's score beta must be positive.\n");
+		ret = -1;
+	}
+	if (msg && sb.len > 0)
+		*msg = xstrndup(sb.buf, sb.len + 1);
+	sb_free(&sb);
+	return ret;
+}
+
 // interface implement
 LASTFMAPI_DECL
 void lastfmapi_source_destroy(void *sp)
@@ -1297,6 +1321,13 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	time_t period;
 	struct json_err jerr;
 	jerr.length = 0;
+	char *opt_msg = NULL;
+
+	if (lastfmapi_check_opts(opts, &opt_msg) < 0) {
+		error("recomm_option error setted:%s", opt_msg);
+		xfree(opt_msg);
+		return -1;
+	}
 
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	assert(p);
@@ -1327,7 +1358,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	}
 	curlbuf_clear(&buf);
 
-	ret = lastfmapi_diffusion_recomm(ls, opts, ls->strategy, la_tr_map, p, ls->diffusion, period, num);
+	ret = lastfmapi_diffusion_recomm(ls, opts, la_tr_map, p, period, num);
 
 cleanup:
 	la_track_map_cleanup(la_tr_map);
@@ -1368,10 +1399,6 @@ bool lastfmapi_config_check(source *s)
 	check(ls->base_url != NULL, ret);
 	check(ls->key != NULL, ret);
 	check(ls->period != NULL, ret);
-	check(ls->diffusion > 0, ret);
-	check(ls->diff_size > 0, ret);
-	check(!(ls->strategy & DIFFUSION_ERR), ret);
-	check(fabs(ls->diff_lambda) > 1e-12, ret);
-	check(ls->strategy & DIFFUSION_RAMSAMPLE && fabs(ls->random_lambda) > 1e-12, ret);
+	check(!(ls->strategy & LASTFMAPI_DIFFUSION_ERR), ret);
 	return ret;
 }

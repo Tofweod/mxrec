@@ -23,7 +23,12 @@ int main()
 		return 1;
 	}
 
-	if ((ret = recomm_multi(s, 5, &p, .level = RECOMM_SIMPLE, .use_security = true)) > 0) {
+	if ((ret = recomm_multi(s, 5, &p, .level = RECOMM_SIMPLE, .use_security = true,
+				.lastfmapi_opts.diffusion = cfg.lastfmapi_diffusion_level,
+				.lastfmapi_opts.diff_size = cfg.lastfmapi_diffusion_size,
+				.lastfmapi_opts.random_lambda = cfg.lastfmapi_random_lambda,
+				.lastfmapi_opts.diff_lambda = cfg.lastfmapi_diff_lambda,
+				.lastfmapi_opts.score_beta = cfg.lastfmapi_score_beta)) > 0) {
 		dump(p->dh, stdout, &p, da_len(p), DUMP2JSON);
 		playlist_free(p);
 		printf("ret of recomm_multi is %d\n", ret);
