@@ -35,4 +35,31 @@
 		goto tag;                                                                                              \
 	} while (0)
 
+// bit control
+#define MXREC_BITSET(x, n) ((x) |= (1UL << (n)))
+#define MXREC_BITCLEAR(x, n) ((x) &= ~(1UL << (n)))
+#define MXREC_BITFLIP(x, n) ((x) ^= (1UL << (n)))
+#define MXREC_BITTEST(x, n) ((x) & (1UL << (n)))
+
+#if defined(__GNUC__) || defined(__clang__)
+#define MXREC_BITCOUNT(x)                                                                                              \
+	_Generic((x),                                                                                                  \
+		unsigned char: __builtin_popcount(x),                                                                  \
+		unsigned short: __builtin_popcount(x),                                                                 \
+		unsigned int: __builtin_popcount(x),                                                                   \
+		unsigned long: __builtin_popcountl(x),                                                                 \
+		unsigned long long: __builtin_popcountll(x),                                                           \
+		default: __mxrec_bitcount_fallback(x))
+#else
+#define MXREC_BITCOUNT(x) __mxrec_bitcount_fallback(x)
+#endif
+
+static inline int __mxrec_bitcount_fallback(unsigned long long v)
+{
+	v = v - ((v >> 1) & 0x5555555555555555ULL);
+	v = (v & 0x3333333333333333ULL) + ((v >> 2) & 0x3333333333333333ULL);
+	v = (v + (v >> 4)) & 0x0F0F0F0F0F0F0F0FULL;
+	return (v * 0x0101010101010101ULL) >> 56;
+}
+
 #endif
