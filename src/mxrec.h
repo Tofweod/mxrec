@@ -2,8 +2,8 @@
 #define TOF_MXREC_H
 
 #include "al.h"
-#include "monotonic.h"
+#include "comm.h"
 #include "source.h"
-#include "u8string.h"
+#include "xmalloc.h"
 
 #endif

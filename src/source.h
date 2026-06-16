@@ -73,7 +73,6 @@ typedef int (*recomm_multi_fp)(source *s, size_t num, playlist *p, recomm_option
 
 typedef void (*security_handle)(source *s);
 
-// TODO parameter optimization
 typedef int (*before_recomm)(source *s, void *userdata);
 typedef int (*after_recomm)(source *s, void *userdata);
 

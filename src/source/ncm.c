@@ -552,9 +552,9 @@ char *ncm_bool2str(bool val)
 	char *str = xmalloc(6);
 	memset(str, 0, 6);
 	if (val)
-		strncpy(str, "true", 4);
+		strcpy(str, "true");
 	else
-		strncpy(str, "false", 5);
+		strcpy(str, "false");
 	return str;
 }
 
