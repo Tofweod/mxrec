@@ -106,7 +106,7 @@ void configfree(config_t *cfg)
 {
 	if (cfg == NULL)
 		return;
-#define CONFIG_FIELD(type, name, cleanup) cleanup(cfg->name);
+#define CONFIG_FIELD(type, name, _ , cleanup, ...) cleanup(cfg->name);
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
 }
