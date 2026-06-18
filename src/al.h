@@ -2,10 +2,17 @@
 #define TOF_MXREC_AL_H
 
 #include "playlist.h"
+#include <stdint.h>
 
 struct merge_params;
-typedef int (*merge_fn)(playlist *result, size_t wanted, playlist *sources, size_t source_size,
-			struct merge_params *params);
+#define MERGE_AL_LIST                                                                                                  \
+	MERGE_AL(dummy, )                                                                                              \
+	MERGE_AL(uniform, )                                                                                            \
+	MERGE_AL(proportional, )                                                                                       \
+	MERGE_AL(weighted, double *weights; size_t count;)                                                             \
+	MERGE_AL(priority, )                                                                                           \
+	MERGE_AL(round_robin, )                                                                                        \
+	MERGE_AL(reservoir, uint64_t seed;)
 
 struct merge_params {
 	int (*merge_source)(playlist *result, size_t wanted, playlist *sources, size_t source_size,
