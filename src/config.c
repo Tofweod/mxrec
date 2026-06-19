@@ -35,7 +35,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->max_try = iniparser_getuint64(d, "general:max-try", 3);
 
 	// lastfm
-	cfg->lastfm_method = xstrdup(iniparser_getstring(d, "lastfm.method", NULL));
+	cfg->lastfm_method = xstrdup(iniparser_getstring(d, "lastfm:method", NULL));
 	cfg->lastfm_username = u8snew(iniparser_getstring(d, "lastfm:username", NULL));
 	cfg->lastfm_security_profile = xstrdup(iniparser_getstring(d, "lastfm:security-profile", "chrome116"));
 

@@ -79,6 +79,7 @@ typedef int (*after_recomm)(source *s, void *userdata);
 typedef bool (*config_check)(source *s);
 
 typedef struct source {
+	const char* name;
 	source_destroy destroy;
 
 	recomm_multi_fp rmp;

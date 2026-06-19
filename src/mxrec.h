@@ -2,6 +2,7 @@
 #define TOF_MXREC_H
 
 #include "al.h"
+#include "config.h"
 #include "source.h"
 
 #define PROG_NAME "mxrec"
@@ -18,11 +19,20 @@ MERGE_AL_LIST
 #undef MERGE_AL
 
 #define MXREC_SOURCE_LIST                                                                                              \
-	MXREC_SOURCE(lastfm)                                                                                           \
+	MXREC_SOURCE(lastfmapi)                                                                                        \
+	MXREC_SOURCE(lastfmweb)                                                                                        \
 	MXREC_SOURCE(ncm)
 
-extern source *sources;
+enum mxrec_source_id {
+#define MXREC_SOURCE(name) SOURCE_##name,
+	MXREC_SOURCE_LIST
+#undef MXREC_SOURCE
+		MXREC_SOURCE_COUNT
+};
 
-void sources_init();
+extern source **sources;
+extern int source_count;
+
+void sources_build(config_t *cfg, const char **names, int count);
 
 #endif

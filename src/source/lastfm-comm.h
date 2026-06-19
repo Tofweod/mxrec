@@ -8,8 +8,8 @@ typedef struct lastfm_security {
 	char *profile;
 } lastfm_security;
 
-extern int lastfm_security_init(lastfm_security *security, config_t *cfg);
-extern void lastfm_security_free(lastfm_security *security);
+extern int lastfm_security_init(config_t *cfg);
+extern void lastfm_security_free();
 extern lastfm_security __lastfm_security;
 
 // TODO lastfm general config check

@@ -548,6 +548,7 @@ cleanup:
 }
 
 static source __lastfmapi_source = {
+	.name = "lastfmapi",
 	.destroy = lastfmapi_source_destroy,
 	.rsp = lastfmapi_recomm_single,
 	.rmp = lastfmapi_recomm_multi,
@@ -677,7 +678,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	lastfmapi_source *s = (lastfmapi_source *)sp;
 	s->src = __lastfmapi_source;
 
-	if (lastfm_security_init(s->src.security, cfg) < 0)
+	if (lastfm_security_init(cfg) < 0)
 		return -1;
 
 	s->curl = curl_easy_init();
@@ -1297,7 +1298,7 @@ LASTFMAPI_DECL
 void lastfmapi_source_destroy(void *sp)
 {
 	lastfmapi_source *s = (lastfmapi_source *)sp;
-	lastfm_security_free(s->src.security);
+	lastfm_security_free();
 	u8sfree(s->username);
 	xfree(s->base_url);
 	xfree(s->key);

@@ -31,6 +31,7 @@ FUNCTION_FIELD_LIST
 #undef FUNCTION_FIELD
 
 static source __lastfmweb_source = {
+	.name = "lastfmweb",
 	.destroy = lastfmweb_source_destroy,
 	.rsp = lastfmweb_recomm_single,
 	.rmp = lastfmweb_recomm_multi,
@@ -58,7 +59,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	lastfmweb_source *s = (lastfmweb_source *)sp;
 	s->src = __lastfmweb_source;
 
-	if (lastfm_security_init(s->src.security, cfg) < 0)
+	if (lastfm_security_init(cfg) < 0)
 		return -1;
 
 	s->curl = curl_easy_init();
@@ -104,9 +105,7 @@ LASTFMWEB_DECL
 char *lastfmweb_parse_url(lastfmweb_source *s, const char *_path, const char *_parameter, ...)
 {
 	va_list paras;
-	char *realurl, *base_url,
-		*url = NULL, *path = NULL,
-		*hout = NULL, *parameter = NULL;
+	char *realurl, *base_url, *url = NULL, *path = NULL, *hout = NULL, *parameter = NULL;
 	size_t urlen;
 	int bufstrlen;
 	CURLU *h = NULL;
@@ -114,8 +113,7 @@ char *lastfmweb_parse_url(lastfmweb_source *s, const char *_path, const char *_p
 	base_url = s->base_url;
 	// future: wrapper parseKVFormat with lastfm config map,
 	// in order to automatically parse path
-	path = parseKVFormat(_path,
-			     MAKE_KV("username", (const char *)s->username), KV_END);
+	path = parseKVFormat(_path, MAKE_KV("username", (const char *)s->username), KV_END);
 
 	if (path == NULL)
 		mxrec_cleanup(cleanup, realurl, NULL);
@@ -220,8 +218,9 @@ artist *lastfmweb_json2artist(yyjson_val *val, bool strict, struct json_err *err
 
 	name = yyjson_get_str(yyjson_obj_get(val, "name"));
 	if (name == NULL) {
-		write_jsonerr(err, "[%s]: failed to parse field \"name\" "
-				   "into string in artist.\n",
+		write_jsonerr(err,
+			      "[%s]: failed to parse field \"name\" "
+			      "into string in artist.\n",
 			      JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, ar, 0);
 	}
@@ -245,8 +244,9 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	// name
 	title = yyjson_get_str(yyjson_obj_get(val, "name"));
 	if (title == NULL) {
-		write_jsonerr(err, "[%s]: failed to parse field \"name\" "
-				   "into string in playlist item.\n",
+		write_jsonerr(err,
+			      "[%s]: failed to parse field \"name\" "
+			      "into string in playlist item.\n",
 			      JSON_ERR_HEAD);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
@@ -254,8 +254,7 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	// album
 	album = yyjson_get_str(yyjson_obj_get(val, "primary_album"));
 	if (strict && album == NULL) {
-		write_jsonerr(err, "[%s]: failed to get album information of %s\n.",
-			      JSON_ERR_HEAD, title);
+		write_jsonerr(err, "[%s]: failed to get album information of %s\n.", JSON_ERR_HEAD, title);
 		mxrec_cleanup(cleanup, tr, 0);
 	}
 
@@ -272,8 +271,7 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 	{
 		a = lastfmweb_json2artist(ar, strict, err);
 		if (strict && a == NULL) {
-			write_jsonerr(err, "[%s]: failed to get an artist information of %s\n",
-				      JSON_ERR_HEAD, title);
+			write_jsonerr(err, "[%s]: failed to get an artist information of %s\n", JSON_ERR_HEAD, title);
 			mxrec_cleanup(cleanup, tr, 0);
 		}
 		artists[i] = a;
@@ -341,12 +339,11 @@ int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, boo
 	pl = NULL;
 	da_init(pl, sizeof(playitem));
 
-	doc = yyjson_read_opts(buf->buf, buf->len,
-			       0, NULL, &err);
+	doc = yyjson_read_opts(buf->buf, buf->len, 0, NULL, &err);
 
 	if (doc == NULL) {
-		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
-			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
+			      err.msg, err.code, err.pos);
 		mxrec_cleanup(cleanup, ret, JSON_READ_ERR);
 	}
 
@@ -391,12 +388,11 @@ int lastfmweb_jsonbuf2playitem(curlbuf *buf, playitem *p, bool strict, struct js
 	yyjson_doc *doc;
 	yyjson_val *root, *pls, *pi;
 
-	doc = yyjson_read_opts(buf->buf, buf->len,
-			       0, NULL, &err);
+	doc = yyjson_read_opts(buf->buf, buf->len, 0, NULL, &err);
 
 	if (doc == NULL) {
-		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n",
-			      JSON_ERR_HEAD, err.msg, err.code, err.pos);
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
+			      err.msg, err.code, err.pos);
 		mxrec_cleanup(cleanup, ret, JSON_READ_ERR);
 	}
 
@@ -425,10 +421,7 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-int _lastfmweb_recomm_single_full(source *s, playitem *p, recomm_option opts)
-{
-	return -1;
-}
+int _lastfmweb_recomm_single_full(source *s, playitem *p, recomm_option opts) { return -1; }
 
 LASTFMWEB_DECL
 int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
@@ -447,9 +440,8 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 	char *realurl = lastfmweb_parse_url(ls, ls->recomm_path, ls->recomm_parameter);
 	if (realurl == NULL)
 		mxrec_cleanup(cleanup, ret, -1);
-	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf,
-				   ls->recomm_method, realurl,
-				   1, ls->recomm_accept) < 0)
+	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf, ls->recomm_method, realurl, 1,
+				   ls->recomm_accept) < 0)
 		mxrec_cleanup(cleanup, ret, -1);
 	code = curl_easy_perform(curl);
 	if (code != CURLE_OK)
@@ -478,7 +470,7 @@ LASTFMWEB_DECL
 void lastfmweb_source_destroy(void *sp)
 {
 	lastfmweb_source *s = (lastfmweb_source *)sp;
-	lastfm_security_free(s->src.security);
+	lastfm_security_free();
 	curl_easy_cleanup(s->curl);
 	xfree(s->base_url);
 	u8sfree(s->username);
@@ -531,9 +523,8 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	if (realurl == NULL)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf,
-				   ls->recomm_method, realurl,
-				   1, ls->recomm_accept) < 0)
+	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf, ls->recomm_method, realurl, 1,
+				   ls->recomm_accept) < 0)
 		mxrec_cleanup(cleanup, ret, -1);
 
 	code = curl_easy_perform(curl);
@@ -544,8 +535,7 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	if (http_code != 200)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p,
-					      opts.strict, &jerr)) < 0) {
+	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p, opts.strict, &jerr)) < 0) {
 		print_jsonerr(&jerr);
 		mxrec_cleanup(cleanup, ret, -1);
 	}
@@ -575,18 +565,18 @@ void lastfmweb_security_handle(source *s)
 	}
 }
 
-#define check(expr, val)                                                       \
-	do {                                                                   \
-		if (!(expr)) {                                                 \
-			(val) = false;                                         \
-			error("lastfm-web source init failed on %s", (#expr)); \
-		}                                                              \
+#define check(expr, val)                                                                                               \
+	do {                                                                                                           \
+		if (!(expr)) {                                                                                         \
+			(val) = false;                                                                                 \
+			error("lastfm-web source init failed on %s", (#expr));                                         \
+		}                                                                                                      \
 	} while (0)
 
 LASTFMWEB_DECL
 bool lastfmweb_config_check(source *s)
 {
-	bool ret;
+	bool ret = true;
 	lastfmweb_source *ls = (lastfmweb_source *)s;
 	check(ls->username != NULL, ret);
 	check(ls->base_url != NULL, ret);

@@ -4,3 +4,4 @@ mxrec
 obj/
 .gdb_history
 config.ini
+*cookie

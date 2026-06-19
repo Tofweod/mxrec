@@ -182,6 +182,7 @@ FUNCTION_FIELD_LIST
 #undef FUNCTION_FIELD
 
 static source __ncm_source = {
+	.name = "ncm",
 	.destroy = ncm_source_destroy,
 	.rsp = ncm_recomm_single,
 	.rmp = ncm_recomm_multi,
@@ -211,7 +212,7 @@ int ncm_source_init(void *sp, config_t *cfg)
 
 	ncm_address_type type = str2addr_type(cfg->ncm_bind_method);
 	const char *address = cfg->ncm_bind_address;
-	int port = cfg->ncm_port;
+	int port = (int)cfg->ncm_port;
 	if (ncm_module_init(&s->M, type, address, port, cfg->ncm_work_dir) < 0)
 		return -1;
 
