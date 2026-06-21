@@ -21,7 +21,12 @@ progress *progress_new(bool threaded)
 	return new progress;
 }
 
-void progress_free(progress *p) { delete p; }
+void progress_free(progress *p)
+{
+	if (!p)
+		return;
+	delete p;
+}
 
 prog_bar *progress_bar_add(progress *p, const char *name, size_t total)
 {

@@ -452,7 +452,6 @@ int main(int argc, char **argv)
 	}
 
 	source_task_collect_all(tasks, NULL, enable_threads);
-
 	task_bus_destroy();
 
 cleanup:
