@@ -559,9 +559,10 @@ static source __lastfmapi_source = {
 
 struct lastfmapi_source {
 	source src;
+	u8s username;
+
 	CURL *curl;
 
-	u8s username;
 	char *base_url;
 	char *key;
 	char *period;

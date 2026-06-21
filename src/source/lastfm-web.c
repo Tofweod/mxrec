@@ -42,10 +42,11 @@ static source __lastfmweb_source = {
 
 struct lastfmweb_source {
 	source src;
+	u8s username;
+
 	CURL *curl;
 
 	char *base_url;
-	u8s username;
 	char *recomm_path;
 	char *recomm_method;
 	char *recomm_accept;

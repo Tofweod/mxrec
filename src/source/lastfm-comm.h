@@ -12,5 +12,4 @@ extern int lastfm_security_init(config_t *cfg);
 extern void lastfm_security_free();
 extern lastfm_security __lastfm_security;
 
-// TODO lastfm general config check
 #endif

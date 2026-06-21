@@ -25,8 +25,8 @@ const char *default_src_names[MXREC_SOURCE_COUNT - 1];
 
 // mxrec default config
 size_t target = 20;
-bool show_progress = true;
-bool enable_threads = true;
+bool show_progress = false;
+bool enable_threads = false;
 
 struct source_task {
 	source *src;
