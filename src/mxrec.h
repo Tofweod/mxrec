@@ -31,8 +31,8 @@ enum mxrec_source_id {
 };
 
 extern source **sources;
-extern int source_count;
+extern size_t source_count;
 
-void sources_build(config_t *cfg, const char **names, int count);
+void sources_build(config_t *cfg, const char **names, size_t count);
 
 #endif

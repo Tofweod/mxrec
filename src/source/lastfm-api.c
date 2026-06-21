@@ -434,19 +434,19 @@ LASTFMAPI_DECL
 size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track ***res, lastfmapi_source *ls,
 				    recomm_option opts);
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, unsigned diff, size_t target, size_t *cur_num,
-				   const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts);
+size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, unsigned diff, size_t target, const la_track *map,
+				   la_track ***res, lastfmapi_source *ls, recomm_option opts);
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
-				  lastfmapi_diffusion_strategy strategy, const la_track *map, la_track ***res,
-				  lastfmapi_source *ls, recomm_option opts);
+size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, lastfmapi_diffusion_strategy strategy,
+				  const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts,
+				  size_t cur_idx, size_t total_tracks);
 LASTFMAPI_DECL
 int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, lastfmapi_diffusion_strategy strategy, int diffusion, time_t period,
-			       size_t target, size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+void _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
+			       time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
 			       recomm_option opts);
 
 LASTFMAPI_DECL
@@ -583,6 +583,7 @@ char *kv_dump(kv_t *kv)
 	return res;
 }
 
+// curl function
 LASTFMAPI_DECL
 char *lastfmapi_parse_url(const char *base_url, const char *method, unsigned para_count, va_list ap)
 {
@@ -633,13 +634,31 @@ void lastfmapi_curl_error(FILE *fp, long http_code, curlbuf *buf)
 }
 
 LASTFMAPI_DECL
-int lastfmapi_curl(curlbuf *buf, CURL *curl, const char *base_url, const char *method, unsigned para_count, ...)
+int lastfmapi_xfer_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+	source *s = userdata;
+	size_t done, total;
+	(void)ultotal;
+	(void)ulnow;
+	done = (size_t)dlnow;
+	total = (size_t)dltotal;
+	if (total == 0)
+		return 0;
+	s->ur(s->update_entry, done, total, "get recent tracks");
+	return 0;
+}
+
+LASTFMAPI_DECL
+int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *method, unsigned para_count, ...)
 {
 	int ret;
 	CURLcode code;
 	long http_code = 0;
 	va_list paras;
 	char *url;
+	CURL *curl = ls->curl;
+	const char *base_url = ls->base_url;
+	source *s = &ls->src;
 
 #ifdef LASTFMAPI_DEBUG
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
@@ -655,7 +674,19 @@ int lastfmapi_curl(curlbuf *buf, CURL *curl, const char *base_url, const char *m
 		mxrec_cleanup(cleanup, ret, -1);
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 
+	if (update && s->ur) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, lastfmapi_xfer_cb);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, s);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+	}
+
 	code = curl_easy_perform(curl);
+	if (update && s->uc) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, NULL);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, NULL);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+		s->uc(s->update_entry);
+	}
 	if (code != CURLE_OK)
 		mxrec_cleanup(cleanup, ret, -1);
 
@@ -712,8 +743,9 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 			       size_t target)
 {
 	int ret;
-	size_t i, cur_num = 0;
+	size_t i;
 	size_t idx, *idxs, map_size;
+	size_t src_size;
 	lastfmapi_diffusion_strategy strategy = ls->strategy;
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(hh, map));
@@ -727,6 +759,7 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 		for (i = 0, cur = map; cur && i < target; ++i, cur = cur->hh.next) {
 			src[i] = cur;
 		}
+		src_size = i;
 	} else if (strategy & LASTFMAPI_DIFFUSION_RAMSAMPLE) {
 		map_size = HASH_CNT(hh, map);
 		idxs = xmalloc(sizeof(*idxs) * target);
@@ -741,12 +774,13 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 				++idx;
 			}
 		}
+		src_size = idx;
 	}
 
 	assert(src[0]);
-	_lastfmapi_diffusion_core(src, strategy, opts.lastfmapi_opts.diffusion, period, target, &cur_num, map, p, ls,
+	_lastfmapi_diffusion_core(src, src_size, strategy, opts.lastfmapi_opts.diffusion, period, target, map, p, ls,
 				  opts);
-	ret = cur_num;
+	ret = da_len(*p);
 cleanup:
 	xfree(idxs);
 	xfree(src);
@@ -754,24 +788,36 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, lastfmapi_diffusion_strategy strategy, int diffusion, time_t period,
-			       size_t target, size_t *cur_num, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+void _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
+			       time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
 			       recomm_option opts)
 {
+	source *s = &ls->src;
 	size_t i, child_size, diff_num;
 	la_track *cur, **res, **child;
+	char progress_desc[256];
 	playlist pl = NULL;
 	playitem pi;
 	res = NULL;
+	diff_num = 0;
 	da_init(res, sizeof(*res));
-	for (cur = *src; cur; cur = *(++src)) {
-		child_size =
-			_lastfmapi_diffusion_track(cur, diffusion, target, cur_num, strategy, map, &child, ls, opts);
+	for (i = 0, cur = *src; cur; cur = *(++src), ++i) {
+		child_size = _lastfmapi_diffusion_track(cur, diffusion, target, strategy, map, &child, ls, opts, i,
+							src_size);
+		diff_num += child_size;
 		if (!child_size)
 			goto cleanup_child;
 		da_append_arr(res, child, child_size);
 cleanup_child:
 		da_free(child);
+	}
+	if (opts.progress_bar && s->ur) {
+		snprintf(progress_desc, sizeof(progress_desc), "diffusion tracks [%zu/%zu]", src_size, src_size);
+		s->ur(s->update_entry, diff_num, diff_num, progress_desc);
+	}
+
+	if (opts.progress_bar && s->uc) {
+		s->uc(s->update_entry);
 	}
 	if (_lastfmapi_latracks_score(res, da_len(res), opts.lastfmapi_opts.diff_lambda, period,
 				      opts.lastfmapi_opts.score_beta) < 0) {
@@ -787,9 +833,8 @@ cleanup_child:
 #endif
 
 	da_init(pl, sizeof(playitem));
-	diff_num = *cur_num;
+	assert(diff_num == da_len(res));
 	diff_num = target < diff_num ? target : diff_num;
-	*cur_num = diff_num;
 	for (i = 0; i < diff_num; ++i) {
 		lastfmapi_latrack2playitem(res[i], &pi);
 		da_append(pl, pi);
@@ -802,13 +847,15 @@ cleanup_child:
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, size_t *cur_num,
-				  lastfmapi_diffusion_strategy strategy, const la_track *map, la_track ***res,
-				  lastfmapi_source *ls, recomm_option opts)
+size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, lastfmapi_diffusion_strategy strategy,
+				  const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts,
+				  size_t cur_idx, size_t total_tracks)
 {
 	df_deque dq;
 	la_track *cur, *find, *str, *sar, **sim_trs, **sim_ars, **total_res;
-	size_t i, sim_tr_size, sim_ar_size, diff_size = 0, diff;
+	size_t i, sim_tr_size, sim_ar_size, diff;
+	size_t diff_size = 0;
+	char progress_desc[256];
 
 	if (strategy & LASTFMAPI_DIFFUSION_DFS)
 		dq = df_stack;
@@ -821,12 +868,15 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, 
 	da_init(total_res, sizeof(*total_res));
 	diff = opts.lastfmapi_opts.diff_size;
 
+	source *s = &ls->src;
+	static size_t cur_size = 0;
 	while (!df_deque_empty(&dq)) {
 #ifdef LASTFMAPI_DEBUG
 		fprintf(stderr, "current dq size:%zu\n", dq.size);
 #endif
 		size_t _diff_size = 0;
 		cur = dq.pop(&dq);
+		++cur_size;
 #ifdef LASTFMAPI_DEBUG
 		fprintf(stderr, "curent ltr diffusion is %d\n", cur->diffusion);
 #endif
@@ -853,12 +903,10 @@ size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, size_t target, 
 			}
 		}
 		diff_size += _diff_size;
-		*cur_num += _diff_size;
 		xfree(sim_trs);
 after_track:
 		_diff_size = 0;
-		sim_ar_size =
-			_lastfmapi_diffusion_artist(cur, diffusion, diff, target, cur_num, map, &sim_ars, ls, opts);
+		sim_ar_size = _lastfmapi_diffusion_artist(cur, diffusion, diff, target, map, &sim_ars, ls, opts);
 		if (!sim_ar_size && !sim_ars)
 			goto cleanup;
 		for (i = 0; i < sim_ar_size; ++i) {
@@ -874,9 +922,13 @@ after_track:
 			}
 		}
 		diff_size += _diff_size;
-		*cur_num += _diff_size;
 		xfree(sim_ars);
 cleanup:
+		if (opts.progress_bar && s->ur) {
+			snprintf(progress_desc, sizeof(progress_desc), "diffusion tracks [%zu/%zu]", cur_idx,
+				 total_tracks);
+			s->ur(s->update_entry, cur_size, cur_size + dq.size, progress_desc);
+		}
 		if (cur->internal && !cur->in_result) {
 			la_track_free(cur);
 		}
@@ -933,10 +985,10 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	char diff_size_s[LONG_STR_SIZE];
 	ull2string(diff_size_s, LONG_STR_SIZE, diff_size);
 
-	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_TRACK_GETSIMILAR, 6,
-			   MAKE_KV("artist", (char *)ltr->key.artist), MAKE_KV("track", (char *)ltr->key.name),
-			   MAKE_KV("mbid", (char *)ltr->key.tr_mbid), MAKE_KV("api_key", ls->key),
-			   MAKE_KV("limit", diff_size_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
+	if (lastfmapi_curl(&buf, ls, false, LASTFMAPI_TRACK_GETSIMILAR, 6, MAKE_KV("artist", (char *)ltr->key.artist),
+			   MAKE_KV("track", (char *)ltr->key.name), MAKE_KV("mbid", (char *)ltr->key.tr_mbid),
+			   MAKE_KV("api_key", ls->key), MAKE_KV("limit", diff_size_s),
+			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
 		mxrec_cleanup(cleanup, track_size, 0);
 	}
 	doc = yyjson_read_opts(buf.buf, buf.len, 0, NULL, &err);
@@ -1087,9 +1139,9 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 	yyjson_read_err err;
 	yyjson_val *root, *tracks, *tr;
 
-	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_ARTIST_GETTOPTRACKS, 5,
-			   MAKE_KV("artist", (char *)ar->name), MAKE_KV("mbid", ar->mbid), MAKE_KV("api_key", ls->key),
-			   MAKE_KV("limit", diff_size_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
+	if (lastfmapi_curl(&buf, ls, false, LASTFMAPI_ARTIST_GETTOPTRACKS, 5, MAKE_KV("artist", (char *)ar->name),
+			   MAKE_KV("mbid", ar->mbid), MAKE_KV("api_key", ls->key), MAKE_KV("limit", diff_size_s),
+			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
 		_res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
@@ -1176,8 +1228,8 @@ u8s _lastfmapi_artist_first(const la_track *ltr)
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_size, size_t target, size_t *cur_num,
-				   const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts)
+size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_size, size_t target, const la_track *map,
+				   la_track ***res, lastfmapi_source *ls, recomm_option opts)
 {
 	size_t i, ar_size = 0, tr_size;
 	la_artist *ars = NULL;
@@ -1197,10 +1249,9 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 
 	// here simply get the first artist
 	artist = _lastfmapi_artist_first(ltr);
-	if (lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_ARTIST_GETSIMILAR, 5,
-			   MAKE_KV("artist", (char *)artist), MAKE_KV("mbid", (char *)ltr->key.ar_mbid),
-			   MAKE_KV("api_key", ls->key), MAKE_KV("limit", diff_size_s),
-			   MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
+	if (lastfmapi_curl(&buf, ls, false, LASTFMAPI_ARTIST_GETSIMILAR, 5, MAKE_KV("artist", (char *)artist),
+			   MAKE_KV("mbid", (char *)ltr->key.ar_mbid), MAKE_KV("api_key", ls->key),
+			   MAKE_KV("limit", diff_size_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0) {
 		*res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
@@ -1347,7 +1398,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	from_s[str_len] = '\0';
 
-	if ((ret = lastfmapi_curl(&buf, ls->curl, ls->base_url, LASTFMAPI_USER_GETRECENTTRACKS, 4,
+	if ((ret = lastfmapi_curl(&buf, ls, opts.progress_bar, LASTFMAPI_USER_GETRECENTTRACKS, 4,
 				  MAKE_KV("username", (char *)ls->username), MAKE_KV("api_key", ls->key),
 				  MAKE_KV("from", from_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0))
 		mxrec_cleanup(cleanup, ret, ret);

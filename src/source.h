@@ -33,26 +33,25 @@ typedef struct recomm_option {
 
 	bool strict;
 	bool use_security;
+	bool progress_bar;
 
-	union {
-		// lastfm api
-		struct {
-			/**
-			 * Diffusion should be positive, representing the maximum diffusion level.
-			 */
-			unsigned diffusion;
-			unsigned diff_size;
+	// lastfm api
+	struct {
+		/**
+		 * Diffusion should be positive, representing the maximum diffusion level.
+		 */
+		unsigned diffusion;
+		unsigned diff_size;
 
-			double random_lambda;
-			double diff_lambda;
-			double score_beta;
-		} lastfmapi_opts;
+		double random_lambda;
+		double diff_lambda;
+		double score_beta;
+	} lastfmapi_opts;
 
-		// ncm
-		struct {
-			bool daily_recomm_fresh;
-		} ncm_opts;
-	};
+	// ncm
+	struct {
+		bool daily_recomm_fresh;
+	} ncm_opts;
 
 } recomm_option;
 
@@ -78,8 +77,11 @@ typedef int (*after_recomm)(source *s, void *userdata);
 
 typedef bool (*config_check)(source *s);
 
+typedef void (*update_recomm)(void *update_entry, size_t cur, size_t total, const char *desc);
+typedef void (*update_clear)(void *update_entry);
+
 typedef struct source {
-	const char* name;
+	const char *name;
 	source_destroy destroy;
 
 	recomm_multi_fp rmp;
@@ -96,6 +98,10 @@ typedef struct source {
 
 	before_recomm br;
 	after_recomm ar;
+
+	void *update_entry;
+	update_recomm ur;
+	update_clear uc;
 
 	void *userdata;
 } source;

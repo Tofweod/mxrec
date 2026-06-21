@@ -13,3 +13,6 @@
 [submodule "lib/libqrencode"]
 	path = lib/libqrencode
 	url = https://github.com/fukuchi/libqrencode.git
+[submodule "lib/indicators"]
+	path = lib/indicators
+	url = https://github.com/p-ranav/indicators.git

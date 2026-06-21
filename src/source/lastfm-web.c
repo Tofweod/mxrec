@@ -102,6 +102,21 @@ size_t lastfmweb_write_callback(char *ptr, const size_t size, const size_t nmemb
 }
 
 LASTFMWEB_DECL
+int lastfmweb_xfer_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+	source *s = userdata;
+	size_t done, total;
+	(void)ultotal;
+	(void)ulnow;
+	done = (size_t)dlnow;
+	total = (size_t)dltotal;
+	if (total == 0)
+		return 0;
+	s->ur(s->update_entry, done, total, "fetching data");
+	return 0;
+}
+
+LASTFMWEB_DECL
 char *lastfmweb_parse_url(lastfmweb_source *s, const char *_path, const char *_parameter, ...)
 {
 	va_list paras;
@@ -326,7 +341,8 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, struct json_err *jerr)
+int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, struct json_err *jerr,
+			       source *s, bool update)
 {
 	int ret;
 	size_t i, plen, handled = 0;
@@ -371,6 +387,13 @@ int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, boo
 		// ignore JSON_PARSE_URL_ERR when not strict
 		da_append(pl, pi);
 		handled++;
+		if (update && s->ur) {
+			s->ur(s->update_entry,handled,plen,"extract tracks");
+		}
+	}
+
+	if(update && s->uc) {
+		s->uc(s->update_entry);
 	}
 
 	*p_ref = pl;
@@ -443,7 +466,20 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf, ls->recomm_method, realurl, 1,
 				   ls->recomm_accept) < 0)
 		mxrec_cleanup(cleanup, ret, -1);
+
+	if (opts.progress_bar && s->ur) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, lastfmweb_xfer_cb);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, s);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+	}
 	code = curl_easy_perform(curl);
+	if (opts.progress_bar && s->uc) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, NULL);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, NULL);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+		s->uc(s->update_entry);
+	}
+
 	if (code != CURLE_OK)
 		mxrec_cleanup(cleanup, ret, -1);
 
@@ -527,7 +563,19 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 				   ls->recomm_accept) < 0)
 		mxrec_cleanup(cleanup, ret, -1);
 
+	if (opts.progress_bar && s->ur) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, lastfmweb_xfer_cb);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, s);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+	}
 	code = curl_easy_perform(curl);
+	if (opts.progress_bar && s->uc) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, NULL);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, NULL);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+		s->uc(s->update_entry);
+	}
+
 	if (code != CURLE_OK)
 		mxrec_cleanup(cleanup, ret, -1);
 
@@ -535,7 +583,7 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	if (http_code != 200)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p, opts.strict, &jerr)) < 0) {
+	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p, opts.strict, &jerr, s, opts.progress_bar)) < 0) {
 		print_jsonerr(&jerr);
 		mxrec_cleanup(cleanup, ret, -1);
 	}

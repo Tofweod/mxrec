@@ -20,6 +20,7 @@
 #include <curl/curl.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <sys/prctl.h>
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -127,6 +128,7 @@ int ncm_module_init(ncm_module *M, ncm_address_type type, const char *address, i
 	}
 
 	if (pid == 0) {
+		prctl(PR_SET_PDEATHSIG, SIGTERM);
 		close(pipefd[0]);
 		dup2(pipefd[1], STDOUT_FILENO);
 		close(pipefd[1]);
@@ -428,7 +430,7 @@ void ncm_json2playitem(yyjson_val *val, playitem *pi, struct json_err *jerr)
 }
 
 NCM_DECL
-int ncm_curlbuf2playlist(curlbuf *buf, size_t num, playlist *pl_ref, struct json_err *jerr)
+int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, struct json_err *jerr, bool update)
 {
 	int ret;
 	ncm_json_msg msg = {0};
@@ -457,7 +459,12 @@ int ncm_curlbuf2playlist(curlbuf *buf, size_t num, playlist *pl_ref, struct json
 	{
 		ncm_json2playitem(song, &p[i], jerr);
 		DAHDR(p)->len++;
+		if (update && s->ur) {
+			s->ur(s->update_entry, DAHDR(p)->len, len, "collecting tracks");
+		}
 	}
+	if (update && s->uc)
+		s->uc(s->update_entry);
 	assert(DAHDR(p)->len == len);
 	ret = len;
 
@@ -467,9 +474,22 @@ cleanup:
 	return ret;
 }
 
+NCM_DECL int ncm_xfer_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+	source *s = userdata;
+	size_t done, total;
+	(void)ultotal;
+	(void)ulnow;
+	done = (size_t)dlnow;
+	total = dltotal > 0 ? (size_t)dltotal : 100;
+	if (s->ur)
+		s->ur(s->update_entry, done, total, "fetching data");
+	return 0;
+}
+
 // ncm curl
 NCM_DECL
-int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
+int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry, ...)
 {
 	int ret;
 	size_t i, para_str_len;
@@ -482,14 +502,15 @@ int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
 	va_list paras;
 	yyjson_mut_doc *doc = NULL;
 	yyjson_mut_val *root;
+	ncm_source *ns = (ncm_source *)s;
 
-	CURL *curl = s->curl;
-	ncm_address_type type = s->addr_type;
+	CURL *curl = ns->curl;
+	ncm_address_type type = ns->addr_type;
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ncm_curl_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
 
-	url = ncm_get_url(s, type, entry);
+	url = ncm_get_url(ns, type, entry);
 	if (url == NULL)
 		mxrec_cleanup(cleanup, ret, -1);
 
@@ -497,7 +518,7 @@ int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
 	curl_easy_setopt(curl, CURLOPT_POST, 1L);
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	if (type == NCM_LOCAL_SOCKET) {
-		curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH, s->address);
+		curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH, ns->address);
 	}
 
 	headers = curl_slist_append(headers, "Content-Type: application/json");
@@ -526,7 +547,20 @@ int ncm_curl(ncm_source *s, curlbuf *buf, const ncm_module_entry entry, ...)
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, para_str);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, para_str_len);
 
+	if (update && s->ur) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, ncm_xfer_cb);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, s);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+	}
+
 	code = curl_easy_perform(curl);
+	if (update && s->uc) {
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, NULL);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, NULL);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+		s->uc(s->update_entry);
+	}
+
 	if (code != CURLE_OK) {
 		mxrec_cleanup(cleanup, ret, -1);
 	}
@@ -577,12 +611,12 @@ int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	char *fresh_str = NULL;
 
 	fresh_str = ncm_bool2str(opts.ncm_opts.daily_recomm_fresh);
-	if ((ret = ncm_curl(ns, &buf, RECOMM_DAILY_SONGS, MAKE_KV("cookie", ns->cookie),
+	if ((ret = ncm_curl(s, &buf, opts.progress_bar, RECOMM_DAILY_SONGS, MAKE_KV("cookie", ns->cookie),
 			    MAKE_KV("afresh", fresh_str))) < 0) {
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
-	if ((ret = ncm_curlbuf2playlist(&buf, num, p, &jerr)) < 0) {
+	if ((ret = ncm_curlbuf2playlist(s, &buf, num, p, &jerr, opts.progress_bar)) < 0) {
 		error("failed to extract playlist from json:%s", jerr.msg);
 		mxrec_cleanup(cleanup, ret, ret);
 	}
@@ -610,7 +644,7 @@ bool ncm_check_username(ncm_source *s)
 		return false;
 
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
-	if (ncm_curl(s, &buf, LOGIN_STATUS, MAKE_KV("cookie", s->cookie)) < 0) {
+	if (ncm_curl(&s->src, &buf, false, LOGIN_STATUS, MAKE_KV("cookie", s->cookie)) < 0) {
 		mxrec_cleanup(cleanup, ret, false);
 	}
 
@@ -678,7 +712,7 @@ int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char 
 	assert(cookie_ref);
 
 	while (elapsed_ms < timeout_ms) {
-		if ((ret = ncm_curl(s, buf, LOGIN_QR_CHECK, MAKE_KV("key", key))) < 0) {
+		if ((ret = ncm_curl(&s->src, buf, false, LOGIN_QR_CHECK, MAKE_KV("key", key))) < 0) {
 			mxrec_cleanup(end, ret, -2);
 		}
 		if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0) {
@@ -741,7 +775,7 @@ void ncm_get_cookie_by_qr(ncm_source *s)
 	jerr.length = 0;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
-	if ((ret = ncm_curl(s, &buf, LOGIN_QR_KEY)) < 0) {
+	if ((ret = ncm_curl(&s->src, &buf, false, LOGIN_QR_KEY)) < 0) {
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
@@ -750,7 +784,7 @@ void ncm_get_cookie_by_qr(ncm_source *s)
 		mxrec_cleanup(cleanup, ret, -1);
 	curlbuf_clear(&buf);
 
-	if ((ret = ncm_curl(s, &buf, LOGIN_QR_CREATE, MAKE_KV("key", key))) < 0) {
+	if ((ret = ncm_curl(&s->src, &buf, false, LOGIN_QR_CREATE, MAKE_KV("key", key))) < 0) {
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 

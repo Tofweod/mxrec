@@ -2,7 +2,7 @@ TARGET = mxrec
 
 SRC_DIR = src
 SRC_SUBDIR += . al ex source utils
-INCLUDE_DIR += lib src
+INCLUDE_DIR += lib src lib/indicators/single_include
 OBJ_DIR = obj
 
 LIB_DIR = lib
@@ -12,21 +12,20 @@ MAKE = make
 CMAKE = cmake
 CC = gcc
 C_FLAGS = -g3 -Wall -fno-omit-frame-pointer
-LD = $(CC)
+CXX = g++
+CXX_FLAGS = -std=c++17 -g3 -Wall -fno-omit-frame-pointer
+LD = $(CXX)
 LIB_TYPE = a
 INCLUDES += $(addprefix -I,$(INCLUDE_DIR))
 LIB_DIRS += -Llib/utf8proc -Llib/iniparser -Llib/curl-impersonate -Llib/yyjson/build
 LD_FLAGS += $(LIB_DIRS) -Wl,-rpath,lib/curl-impersonate/
-LD_LIBS = -lcurl-impersonate-chrome -lm 
+LD_LIBS = -lcurl-impersonate-chrome -lm -lstdc++ -lpthread
 
-ifeq ($(CC), g++)
-	TYPE = cpp
-else
-	TYPE = c
-endif
-
-SRCS += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.$(TYPE)}}
-OBJS += $(patsubst $(SRC_DIR)/%.$(TYPE), $(OBJ_DIR)/%.o, $(SRCS))
+SRCS_C += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.c}}
+SRCS_CPP += ${foreach subdir, $(SRC_SUBDIR), ${wildcard $(SRC_DIR)/$(subdir)/*.cpp}}
+SRCS += $(SRCS_C) $(SRCS_CPP)
+OBJS += $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS_C))
+OBJS += $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS_CPP))
 jsondir=lib/yyjson
 LIBS = \
 	lib/utf8proc/libutf8proc.$(LIB_TYPE) \
@@ -36,7 +35,8 @@ LIBS = \
 	lib/libqrencode/libqrencode.a
 
 
-vpath %.$(TYPE) $(sort $(dir $(SRCS)))
+vpath %.c $(sort $(dir $(SRCS_C)))
+vpath %.cpp $(sort $(dir $(SRCS_CPP)))
 
 all : $(TARGET) test
 	@echo "Builded target:" $^
@@ -68,17 +68,25 @@ lib/libqrencode/libqrencode.a:
 	$(MAKE) -C lib/libqrencode
 	cd lib/libqrencode && cp .libs/libqrencode.a libqrencode.a
 
+lib/indicators/single_include/indicators/indicators.cpp:
+	@echo "Building lib for lib indicators..."
+	cd lib/indicators && python3 utils/amalgamate/amalgamate.py -c single_include.json -s . 
+
 $(TARGET) : $(OBJS) $(LIBS)
 	@mkdir -p $(@D)
 	@echo "Linking" $@ "from" $^ "..."
 	$(LD) -o $@ $^ $(LD_FLAGS) $(LD_LIBS)
 	@echo "Link finished\n"
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.$(TYPE) $(LIBS)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(LIBS)
 	@mkdir -p $(dir $@)
-	@mkdir -p $(@D)
 	@echo "Compiling" $@ "from" $< "..."
 	$(CC) -MMD -MP -c -o $@ $< $(C_FLAGS) $(INCLUDES)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(LIBS)
+	@mkdir -p $(dir $@)
+	@echo "Compiling" $@ "from" $< "..."
+	$(CXX) -MMD -MP -c -o $@ $< $(CXX_FLAGS) $(INCLUDES)
 
 test: $(OBJS)
 	@echo "Start building tests\n"

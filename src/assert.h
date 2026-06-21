@@ -1,6 +1,10 @@
 #ifndef TOF_MXREC_ASSERT_H
 #define TOF_MXREC_ASSERT_H
 
+#ifdef __cplusplus
+#include_next <assert.h>
+#else
+
 #include "comm.h"
 
 #ifndef static_assert
@@ -16,4 +20,5 @@ void _Assert(const char *e, const char *file, int line);
 mxrec_noreturn void _Panic(const char *file, int line, const char *msg, ...);
 void _Error(const char *file, int line, const char *msg, ...);
 
-#endif
+#endif /* !__cplusplus */
+#endif /* TOF_MXREC_ASSERT_H */

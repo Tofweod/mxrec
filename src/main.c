@@ -1,6 +1,8 @@
 #include "comm.h"
 #include "monotonic.h"
 #include "mxrec.h"
+#include "progress.h"
+#include "source.h"
 #include "source/lastfm-api.h"
 #include "source/lastfm-web.h"
 #include "source/ncm.h"
@@ -9,6 +11,7 @@
 #include "xmalloc.h"
 #include <getopt.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -16,8 +19,96 @@ config_t config = {0};
 config_t cli_config = {0};
 
 source **sources;
-int source_count;
+size_t source_count;
+const char **source_names;
 const char *default_src_names[MXREC_SOURCE_COUNT - 1];
+
+// mxrec default config
+size_t target = 20;
+bool show_progress = true;
+bool enable_threads = true;
+
+struct source_task {
+	source *src;
+	playlist pl;
+	int ret;
+	size_t wanted;
+	recomm_option opts;
+	pthread_t thread;
+	size_t idx;
+	bool collected;
+};
+
+static struct {
+	pthread_mutex_t lock;
+	pthread_cond_t cond;
+	int mask;
+	size_t total;
+} task_bus;
+
+static void task_bus_init(size_t total)
+{
+	pthread_mutex_init(&task_bus.lock, NULL);
+	pthread_cond_init(&task_bus.cond, NULL);
+	task_bus.mask = 0;
+	task_bus.total = total;
+}
+
+static void task_bus_destroy(void)
+{
+	pthread_mutex_destroy(&task_bus.lock);
+	pthread_cond_destroy(&task_bus.cond);
+}
+struct source_task tasks[MXREC_SOURCE_COUNT] = {0};
+
+static void *source_task_run(void *arg)
+{
+	struct source_task *t = arg;
+	t->ret = _recomm_multi(t->src, t->wanted, &t->pl, t->opts);
+	pthread_mutex_lock(&task_bus.lock);
+	MXREC_BITSET(task_bus.mask, t->idx);
+	pthread_cond_signal(&task_bus.cond);
+	pthread_mutex_unlock(&task_bus.lock);
+	return NULL;
+}
+
+static void source_task_spawn(struct source_task *task, size_t idx, bool enable_threads)
+{
+	task->idx = idx;
+	task->collected = false;
+	if (enable_threads) {
+		pthread_create(&task->thread, NULL, source_task_run, task);
+	} else {
+		task->ret = _recomm_multi(task->src, task->wanted, &task->pl, task->opts);
+	}
+}
+
+static void source_task_collect_all(struct source_task *tasks, playlist *out, bool enable_threads)
+{
+	size_t i, remain;
+	if (enable_threads) {
+		remain = task_bus.total;
+		pthread_mutex_lock(&task_bus.lock);
+		while (remain > 0) {
+			pthread_cond_wait(&task_bus.cond, &task_bus.lock);
+			for (i = 0; i < task_bus.total; ++i) {
+				if (MXREC_BITTEST(task_bus.mask, i) && !tasks[i].collected) {
+					if (tasks[i].ret > 0) {
+						// TODO
+					}
+					tasks[i].collected = true;
+					--remain;
+				}
+			}
+		}
+		pthread_mutex_unlock(&task_bus.lock);
+	} else {
+		for (i = 0; i < task_bus.total; ++i) {
+			if (tasks[i].ret > 0) {
+			}
+		}
+	}
+}
 
 enum cli_opt_id {
 	CLI_OPT_BASE = 256,
@@ -29,6 +120,9 @@ enum cli_opt_id {
 
 struct option cli_long_opts[] = {{"config", required_argument, 0, 'c'},
 				 {"help", no_argument, 0, 'h'},
+				 {"target", required_argument, 0, 't'},
+				 {"show-progress", no_argument, 0, 'p'},
+				 {"enable-threads", no_argument, 0, 'T'},
 #define CONFIG_FIELD(type, name, cli, ...) {cli, required_argument, 0, OPT_##name},
 				 CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
@@ -59,6 +153,9 @@ static void mxrec_usage()
 	MXREC_SOURCE_LIST
 #undef MXREC_SOURCE
 	printf("\n");
+	printf("  -t, --target=<N>             Number of tracks to collect (default 20)\n");
+	printf("  -p, --show-progress          Show progress bar (default false)\n");
+	printf("  -T, --enable-threads         Enable threads (default false)\n");
 	printf("  -h, --help                   Show this help\n");
 	printf("\nConfig overrides (--<name>=<value>):\n");
 #define CONFIG_FIELD(type, name, cli, dtor, desc) printf("  --%-35s  (%s)\n", cli, desc);
@@ -132,16 +229,17 @@ static int cli_set_field(config_t *opts, int opt_id, const char *val)
 }
 
 int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_file, const char **src_names,
-		   int *src_count)
+		   size_t *src_count)
 {
-	int opt, idx, nsrc = 0;
+	int opt, idx;
+	size_t nsrc = 0;
 
 	memset(opts, 0, sizeof(*opts));
 	*config_file = NULL;
 
 	opterr = 0;
 
-	while ((opt = getopt_long(argc, argv, "c:s:h", cli_long_opts, &idx)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:s:t:pTh", cli_long_opts, &idx)) != -1) {
 		switch (opt) {
 		case 'c':
 			*config_file = optarg;
@@ -149,6 +247,19 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 		case 's':
 			if (nsrc < MXREC_SOURCE_COUNT)
 				src_names[nsrc++] = optarg;
+			break;
+		case 't': {
+			unsigned long long v;
+			if (!string2ull(optarg, &v))
+				return -1;
+			target = (size_t)v;
+			break;
+		}
+		case 'p':
+			show_progress = true;
+			break;
+		case 'T':
+			enable_threads = true;
 			break;
 		case 'h':
 			mxrec_usage();
@@ -170,7 +281,7 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 	return 0;
 }
 
-void sources_build(config_t *cfg, const char **names, int count)
+void sources_build(config_t *cfg, const char **names, size_t count)
 {
 	int i, ret;
 	source_count = count;
@@ -276,9 +387,12 @@ static void mxrec_sources_free()
 
 int main(int argc, char **argv)
 {
-	int ret = 0, src_count;
+	int ret = 0;
+	size_t i, src_count;
 	const char *config_file = NULL;
 	const char *src_names[MXREC_SOURCE_COUNT];
+	recomm_option opts;
+	progress *prog = NULL;
 
 	globalCurlInit();
 
@@ -293,21 +407,56 @@ int main(int argc, char **argv)
 	config_overwrite(&config, &cli_config);
 	configfree(&cli_config);
 
-	if (src_count > 0)
+	if (src_count > 0) {
+		source_names = src_names;
 		sources_build(&config, src_names, src_count);
-	else {
+	} else {
+		source_names = default_src_names;
 		default_src_names_build(&config);
 		sources_build(&config, default_src_names, MXREC_SOURCE_COUNT - 1);
 	}
 
-#if MXREC_DEBUG
-	size_t i;
-	for (i = 0; i < source_count; ++i) {
-		printf("source is: %s\n", sources[i]->name);
+	if (show_progress) {
+		prog = progress_new(enable_threads);
+		for (i = 0; i < source_count; i++) {
+			sources[i]->update_entry = progress_bar_add(prog, sources[i]->name, target);
+			sources[i]->ur = progress_entry_update;
+			sources[i]->uc = progress_entry_clear;
+		}
 	}
-#endif
+
+	opts = (recomm_option){.level = RECOMM_SIMPLE,
+			       .use_security = true,
+			       .strict = true,
+			       .progress_bar = show_progress,
+			       .lastfmapi_opts =
+				       {
+					       .diffusion = config.lastfmapi_diffusion_level,
+					       .diff_size = config.lastfmapi_diffusion_size,
+					       .random_lambda = config.lastfmapi_random_lambda,
+					       .diff_lambda = config.lastfmapi_diff_lambda,
+					       .score_beta = config.lastfmapi_score_beta,
+				       },
+			       .ncm_opts = {
+				       .daily_recomm_fresh = true,
+			       }};
+
+	task_bus_init(source_count);
+	for (i = 0; i < source_count; ++i) {
+		tasks[i] = (struct source_task){
+			.src = sources[i],
+			.wanted = target,
+			.opts = opts,
+		};
+		source_task_spawn(&tasks[i], i, enable_threads);
+	}
+
+	source_task_collect_all(tasks, NULL, enable_threads);
+
+	task_bus_destroy();
 
 cleanup:
+	progress_free(prog);
 	mxrec_sources_free();
 	configfree(&config);
 	globalCurlCleanup();

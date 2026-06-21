@@ -10,10 +10,13 @@ LD_LIBS = -lcurl-impersonate-chrome -lm
 
 CC = gcc
 CFLAGS = -g3 -Wall -fno-omit-frame-pointer
+CXX = g++
+CXXFLAGS = -std=c++17 -g3 -Wall -fno-omit-frame-pointer
 
 INCLUDES = \
 	-I$(ROOT_SRC) \
 	-I$(ROOT_LIB) \
+	-I$(ROOT_LIB)/indicators/single_include \
 	-I.
 
 LIBS = \
@@ -62,6 +65,10 @@ random-test: random-test.c $(LIB_OBJS)
 
 time-test: time-test.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
+	@echo "Built $@"
+
+progress-test: progress-test.cpp ../obj/./progress.o
+	$(CXX) $(CXXFLAGS) $< ../obj/./progress.o -o $@ $(INCLUDES) -lpthread
 	@echo "Built $@"
 
 clean:

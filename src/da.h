@@ -32,7 +32,7 @@ struct da_hdr {
 		arr = (void *)((char *)hdr + DAHDRSIZE);                                                               \
 	} while (0)
 
-#define da_len(arr) (DAHDR(arr)->len)
+#define da_len(arr) (arr ? DAHDR(arr)->len : 0)
 
 #define da_next_alloc(x) ((x) <= 1 ? 1 : (1u << (32 - __builtin_clz((x) - 1))))
 
