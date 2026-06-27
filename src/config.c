@@ -64,7 +64,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->ncm_work_dir = xstrdup(iniparser_getstring(d, "ncm:work-dir", NULL));
 	cfg->ncm_cookie_file = xstrdup(iniparser_getstring(d, "ncm:cookie-file", NULL));
 	cfg->ncm_bind_method = xstrdup(iniparser_getstring(d, "ncm:bind-method", "http"));
-	cfg->ncm_bind_address = xstrdup(iniparser_getstring(d, "ncm:bind-address", "127.0.0.1"));
+	cfg->ncm_bind_address = xstrdup(iniparser_getstring(d, "ncm:bind-address", NULL));
 	cfg->ncm_port = iniparser_getuint64(d, "ncm:port", 9900);
 
 	iniparser_freedict(d);
@@ -106,7 +106,7 @@ void configfree(config_t *cfg)
 {
 	if (cfg == NULL)
 		return;
-#define CONFIG_FIELD(type, name, _ , cleanup, ...) cleanup(cfg->name);
+#define CONFIG_FIELD(type, name, _, cleanup, ...) cleanup(cfg->name);
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
 }

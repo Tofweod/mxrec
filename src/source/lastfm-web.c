@@ -75,7 +75,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	s->recomm_accept = xstrdup(cfg->lastfmweb_recomm_accept);
 	s->recomm_parameter = xstrdup(cfg->lastfmweb_recomm_parameter);
 
-	return source_check(s);
+	return source_check(s) ? 0 : -1;
 }
 
 extern int lastfmweb_source_new(source **src, config_t *cfg)
@@ -83,7 +83,7 @@ extern int lastfmweb_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmweb_source));
-	if (!lastfmweb_source_init(s, cfg)) {
+	if (lastfmweb_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
 	}
@@ -187,7 +187,7 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 
 	struct curl_slist *h = NULL;
 
-#if 1
+#if 0
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 #endif
 
@@ -269,10 +269,10 @@ track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
 
 	// album
 	album = yyjson_get_str(yyjson_obj_get(val, "primary_album"));
-	if (strict && album == NULL) {
-		write_jsonerr(err, "[%s]: failed to get album information of %s\n.", JSON_ERR_HEAD, title);
-		mxrec_cleanup(cleanup, tr, 0);
-	}
+	/* if (strict && album == NULL) {
+	 *         write_jsonerr(err, "[%s]: failed to get album information of %s\n.", JSON_ERR_HEAD, title);
+	 *         mxrec_cleanup(cleanup, tr, 0);
+	 * } */
 
 	// aritsts
 	ars = yyjson_obj_get(val, "artists");
@@ -569,6 +569,7 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, s);
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 	}
+
 	code = curl_easy_perform(curl);
 	if (opts.progress_bar && s->uc) {
 		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, NULL);
@@ -576,7 +577,6 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
 		s->uc(s->update_entry);
 	}
-
 	if (code != CURLE_OK)
 		mxrec_cleanup(cleanup, ret, -1);
 

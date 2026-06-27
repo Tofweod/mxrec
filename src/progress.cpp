@@ -33,9 +33,12 @@ prog_bar *progress_bar_add(progress *p, const char *name, size_t total)
 	auto *b = new prog_bar;
 	b->owner = p;
 	b->name = name;
+		auto init_prefix = std::string(name) + ": ";
+		if (init_prefix.length() < 50)
+			init_prefix.append(50 - init_prefix.length(), ' ');
 	auto bar = std::make_unique<indicators::ProgressBar>(
 		indicators::option::BarWidth{30}, indicators::option::Start{"["}, indicators::option::End{"]"},
-		indicators::option::PrefixText{std::string(name) + " "}, indicators::option::ShowElapsedTime{false},
+		indicators::option::PrefixText{init_prefix}, indicators::option::ShowElapsedTime{false},
 		indicators::option::ShowRemainingTime{false}, indicators::option::MaxProgress{100},
 		indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}});
 	b->bar = bar.get();

@@ -3,6 +3,7 @@
 
 #include "al.h"
 #include "config.h"
+#include "dump.h"
 #include "source.h"
 
 #define PROG_NAME "mxrec"
@@ -34,5 +35,7 @@ extern source **sources;
 extern size_t source_count;
 
 void sources_build(config_t *cfg, const char **names, size_t count);
+
+enum dumpType str2dumptype(const char *type_str);
 
 #endif

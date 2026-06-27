@@ -36,6 +36,7 @@
 	CONFIG_FIELD(uint64_t, ncm_port, "ncm-port", (void), "NCM port number")
 
 typedef struct config_t {
+	// TODO recomm level in the future
 #define CONFIG_FIELD(type, name, ...) type name;
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD

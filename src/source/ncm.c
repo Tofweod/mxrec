@@ -61,7 +61,7 @@ ncm_address_type str2addr_type(const char *str)
 	else
 		mxrec_cleanup(err, err_strategy, str);
 err:
-	error("failed to convert %s into diffusion_strategy", err_strategy);
+	error("ncm failed to convert %s into diffusion_strategy", err_strategy);
 	return NCM_NONE_ADDRESS;
 }
 
@@ -136,11 +136,13 @@ int ncm_module_init(ncm_module *M, ncm_address_type type, const char *address, i
 		chdir(work_dir);
 
 		if (type == NCM_LOCAL_SOCKET) {
-			execlp("node", "node", NCM_MODULE_ENTRYPOINT, "--mode", NCM_LOCAL_SOCKET_STR, "--address",
-			       address, NULL);
+			execlp("node", "node", "--optimize-for-size", "--max-old-space-size=64",
+			       "--max-semi-space-size=1", NCM_MODULE_ENTRYPOINT, "--mode", NCM_LOCAL_SOCKET_STR,
+			       "--address", address, NULL);
 		} else {
-			execlp("node", "node", NCM_MODULE_ENTRYPOINT, "--mode", NCM_HTTP_REQUEST_STR, "--address",
-			       address, "--port", port_str, NULL);
+			execlp("node", "node", "--optimize-for-size", "--max-old-space-size=64",
+			       "--max-semi-space-size=1", NCM_MODULE_ENTRYPOINT, "--mode", NCM_HTTP_REQUEST_STR,
+			       "--address", address, "--port", port_str, NULL);
 		}
 		_exit(127);
 	}
@@ -214,6 +216,9 @@ int ncm_source_init(void *sp, config_t *cfg)
 
 	ncm_address_type type = str2addr_type(cfg->ncm_bind_method);
 	const char *address = cfg->ncm_bind_address;
+	if (address == NULL) {
+		address = type == NCM_HTTP_REQUEST ? NCM_DEFAULT_HTTP_ADDRESS : NCM_DEFAULT_SOCKET_ADDRESS;
+	}
 	int port = (int)cfg->ncm_port;
 	if (ncm_module_init(&s->M, type, address, port, cfg->ncm_work_dir) < 0)
 		return -1;
@@ -227,7 +232,7 @@ int ncm_source_init(void *sp, config_t *cfg)
 	s->address = xstrdup(address);
 	s->addr_type = type;
 	s->cookie = slurp(cfg->ncm_cookie_file);
-	return source_check(s);
+	return source_check(s) ? 0 : -1;
 }
 
 NCM_DECL
@@ -291,7 +296,6 @@ void ncm_json_msg_free(ncm_json_msg *msg)
 		xfree(msg->err_msg);
 		return;
 	}
-	assert(msg->success);
 }
 
 NCM_DECL
@@ -443,6 +447,7 @@ int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, 
 	}
 
 	if (!msg.success && !msg.code) {
+		write_jsonerr(jerr, "%s", msg.err_msg);
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -617,7 +622,7 @@ int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	}
 
 	if ((ret = ncm_curlbuf2playlist(s, &buf, num, p, &jerr, opts.progress_bar)) < 0) {
-		error("failed to extract playlist from json:%s", jerr.msg);
+		error("failed to extract playlist from ncm json:%s", jerr.msg);
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
@@ -653,6 +658,7 @@ bool ncm_check_username(ncm_source *s)
 	}
 
 	if (!msg.success && !msg.code) {
+		error("failed to check ncm username:%s", msg.err_msg);
 		mxrec_cleanup(cleanup, ret, false);
 	}
 
@@ -665,7 +671,7 @@ bool ncm_check_username(ncm_source *s)
 		// TODO log
 		ret = false;
 	}
-	ret = cmp == 0;
+	ret = (cmp == 0);
 cleanup:
 	curlbuf_free(&buf);
 	ncm_json_msg_free(&msg);
@@ -719,8 +725,10 @@ int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char 
 			mxrec_cleanup(end, ret, -2);
 		}
 		curlbuf_clear(buf);
-		if (!msg.success && !msg.code)
+		if (!msg.success && !msg.code) {
+			error("ncm failed to check qr code:%s", msg.err_msg);
 			mxrec_cleanup(end, ret, -2);
+		}
 
 		// data.body.code
 		code = yyjson_get_int(YYJSON_GET(msg.data, "body", "code"));
@@ -802,9 +810,9 @@ void ncm_get_cookie_by_qr(ncm_source *s)
 	if (!ret && cookie)
 		printf("[INFO]: cookie of NCM is:\n%s\n", cookie);
 	else if (ret == -1)
-		printf("[INFO]: QR Code has been expired, please generate again.\n");
+		printf("[INFO]: NCM QR Code has been expired, please generate again.\n");
 	else
-		error("failed to get cookie from QRCode");
+		error("NCM failed to get cookie from QRCode");
 
 cleanup:
 	xfree(key);

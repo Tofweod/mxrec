@@ -11,7 +11,7 @@ int main()
 	source *s;
 	playlist p;
 	playitem pi;
-	const char *configfile = "../confing.ini";
+	const char *configfile = "../config.ini";
 	if (!load_config(configfile, &cfg)) {
 		return 1;
 	}

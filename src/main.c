@@ -1,6 +1,9 @@
 #include "comm.h"
+#include "da.h"
+#include "dump.h"
 #include "monotonic.h"
 #include "mxrec.h"
+#include "playlist.h"
 #include "progress.h"
 #include "source.h"
 #include "source/lastfm-api.h"
@@ -27,6 +30,8 @@ const char *default_src_names[MXREC_SOURCE_COUNT - 1];
 size_t target = 20;
 bool show_progress = false;
 bool enable_threads = false;
+const char *dumptype = "json";
+bool disable_strict_mode = false;
 
 struct source_task {
 	source *src;
@@ -94,7 +99,8 @@ static void source_task_collect_all(struct source_task *tasks, playlist *out, bo
 			for (i = 0; i < task_bus.total; ++i) {
 				if (MXREC_BITTEST(task_bus.mask, i) && !tasks[i].collected) {
 					if (tasks[i].ret > 0) {
-						// TODO
+						da_append_arr(*out, tasks[i].pl, tasks[i].ret);
+						da_free(tasks[i].pl);
 					}
 					tasks[i].collected = true;
 					--remain;
@@ -105,6 +111,8 @@ static void source_task_collect_all(struct source_task *tasks, playlist *out, bo
 	} else {
 		for (i = 0; i < task_bus.total; ++i) {
 			if (tasks[i].ret > 0) {
+				da_append_arr(*out, tasks[i].pl, tasks[i].ret);
+				da_free(tasks[i].pl);
 			}
 		}
 	}
@@ -120,9 +128,11 @@ enum cli_opt_id {
 
 struct option cli_long_opts[] = {{"config", required_argument, 0, 'c'},
 				 {"help", no_argument, 0, 'h'},
-				 {"target", required_argument, 0, 't'},
+				 {"target", required_argument, 0, 'n'},
 				 {"show-progress", no_argument, 0, 'p'},
 				 {"enable-threads", no_argument, 0, 'T'},
+				 {"export-type", required_argument, 0, 't'},
+				 {"strict", no_argument, 0, 's'},
 #define CONFIG_FIELD(type, name, cli, ...) {cli, required_argument, 0, OPT_##name},
 				 CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
@@ -147,7 +157,8 @@ static void mxrec_usage()
 	printf("Usage: %s [options]\n", PROG_NAME);
 	printf("Options:\n");
 	printf("  -c, --config=<file>          Path to config file\n");
-	printf("  -s <source>                  Enable source (use multiple times)\n");
+	printf("  -s, --disable-strict         Disable strict mode(default false)\n");
+	printf("  -S <source>                  Enable source (use multiple times)\n");
 	printf("                               Sources: ");
 #define MXREC_SOURCE(name) printf("%s ", #name);
 	MXREC_SOURCE_LIST
@@ -239,16 +250,21 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 
 	opterr = 0;
 
-	while ((opt = getopt_long(argc, argv, "c:s:t:pTh", cli_long_opts, &idx)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:S:n:t:spTh", cli_long_opts, &idx)) != -1) {
 		switch (opt) {
 		case 'c':
 			*config_file = optarg;
 			break;
+		case 't':
+			dumptype = optarg;
+			break;
 		case 's':
+			disable_strict_mode = true;
+		case 'S':
 			if (nsrc < MXREC_SOURCE_COUNT)
 				src_names[nsrc++] = optarg;
 			break;
-		case 't': {
+		case 'n': {
 			unsigned long long v;
 			if (!string2ull(optarg, &v))
 				return -1;
@@ -385,6 +401,8 @@ static void mxrec_sources_free()
 	}
 }
 
+enum dumpType str2dumptype(const char *type_str) {}
+
 int main(int argc, char **argv)
 {
 	int ret = 0;
@@ -393,6 +411,7 @@ int main(int argc, char **argv)
 	const char *src_names[MXREC_SOURCE_COUNT];
 	recomm_option opts;
 	progress *prog = NULL;
+	playlist pl = NULL;
 
 	globalCurlInit();
 
@@ -427,7 +446,7 @@ int main(int argc, char **argv)
 
 	opts = (recomm_option){.level = RECOMM_SIMPLE,
 			       .use_security = true,
-			       .strict = true,
+			       .strict = !disable_strict_mode,
 			       .progress_bar = show_progress,
 			       .lastfmapi_opts =
 				       {
@@ -451,10 +470,15 @@ int main(int argc, char **argv)
 		source_task_spawn(&tasks[i], i, enable_threads);
 	}
 
-	source_task_collect_all(tasks, NULL, enable_threads);
+	da_init(pl, sizeof(*pl));
+	source_task_collect_all(tasks, &pl, enable_threads);
 	task_bus_destroy();
 
+	// TODO
+	dump(pl->dh, stdout, &pl, da_len(pl), DUMP2JSON);
+
 cleanup:
+	playlist_free(pl);
 	progress_free(prog);
 	mxrec_sources_free();
 	configfree(&config);

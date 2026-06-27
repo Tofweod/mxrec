@@ -723,7 +723,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	s->key = xstrdup(cfg->lastfmapi_key);
 	s->period = xstrdup(cfg->lastfmapi_period);
 	s->strategy = str2strategy(cfg->lastfmapi_strategy) | str2strategy(cfg->lastfmapi_sample);
-	return source_check(s);
+	return source_check(s) ? 0 : -1;
 }
 
 extern int lastfmapi_source_new(source **src, config_t *cfg)
@@ -731,7 +731,7 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmapi_source));
-	if (!lastfmapi_source_init(s, cfg)) {
+	if (lastfmapi_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
 	}
