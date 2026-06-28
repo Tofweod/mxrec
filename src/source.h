@@ -4,6 +4,7 @@
 #include "assert.h"
 #include "playlist.h"
 #include "xmalloc.h"
+#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -104,6 +105,10 @@ typedef struct source {
 	update_clear uc;
 
 	void *userdata;
+
+	// general settings
+	uint64_t timeout;
+	uint64_t max_try;
 } source;
 
 static inline void source_clearuserdata(source *s);

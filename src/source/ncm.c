@@ -521,6 +521,8 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 	CURL *curl = ns->curl;
 	ncm_address_type type = ns->addr_type;
 
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout);
+
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ncm_curl_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
 
@@ -576,6 +578,7 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 	}
 
 	if (code != CURLE_OK) {
+		error("ncm curl failed: %s", curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -836,6 +839,7 @@ int ncm_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct ncm_source));
+	source_init(s, cfg);
 	if (ncm_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

@@ -664,6 +664,11 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 #endif
 
+	/**
+	 * shorter timeout threshold than the normal one to limit diffusion runtime
+	 */
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout / 5);
+
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfmapi_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
 
@@ -687,8 +692,10 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
 		s->uc(s->update_entry);
 	}
-	if (code != CURLE_OK)
+	if (code != CURLE_OK) {
+		error("lastfm api curl failed: %s", curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
 	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
 	if (http_code != 200)
@@ -730,6 +737,7 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmapi_source));
+	source_init(s, cfg);
 	if (lastfmapi_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

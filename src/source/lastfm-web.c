@@ -83,6 +83,7 @@ extern int lastfmweb_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmweb_source));
+	source_init(s, cfg);
 	if (lastfmweb_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;
@@ -190,6 +191,8 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 #if 0
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 #endif
+
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout);
 
 	// set url
 	curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -389,11 +392,11 @@ int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, boo
 		da_append(pl, pi);
 		handled++;
 		if (update && s->ur) {
-			s->ur(s->update_entry,handled,plen,"extract tracks");
+			s->ur(s->update_entry, handled, plen, "extract tracks");
 		}
 	}
 
-	if(update && s->uc) {
+	if (update && s->uc) {
 		s->uc(s->update_entry);
 	}
 
@@ -481,8 +484,10 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 		s->uc(s->update_entry);
 	}
 
-	if (code != CURLE_OK)
+	if (code != CURLE_OK) {
+		error("lastfm web curl failed: %s", curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if (http_code != 200)
@@ -577,8 +582,10 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
 		s->uc(s->update_entry);
 	}
-	if (code != CURLE_OK)
+	if (code != CURLE_OK) {
+		error("lastfm web curl failed: %s", curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if (http_code != 200)

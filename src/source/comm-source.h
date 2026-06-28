@@ -14,4 +14,6 @@ typedef struct config_t config_t;
 	FUNCTION_FIELD(void, security_handle, source *s)                               \
 	FUNCTION_FIELD(bool, config_check, source *s)
 
+void source_init(source *s, config_t *cfg);
+
 #endif // !TOF_MXREC_COMM_SOURCE_H
