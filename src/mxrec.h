@@ -36,6 +36,10 @@ extern size_t source_count;
 
 void sources_build(config_t *cfg, const char **names, size_t count);
 
+#define DUMP_TYPE_STR_SIZE 10UL
+#define DUMP_TYPE_LIST       \
+    DUMP_TYPE(json, JSON)
+
 enum dumpType str2dumptype(const char *type_str);
 
 #endif

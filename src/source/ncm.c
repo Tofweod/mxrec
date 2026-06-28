@@ -440,6 +440,7 @@ int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, 
 	ncm_json_msg msg = {0};
 	playlist p = NULL;
 	size_t i, len;
+	yyjson_arr_iter iter;
 	yyjson_val *songs, *song;
 
 	if ((ret = ncm_curlbuf2json_msg(&msg, buf, jerr)) < 0) {
@@ -457,20 +458,28 @@ int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, 
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
-	// TODO num copmares len
 	len = yyjson_arr_size(songs);
+	len = len <= num ? len : num;
 	da_init2(p, sizeof(playitem), len);
-	yyjson_arr_foreach(songs, i, len, song)
-	{
-		ncm_json2playitem(song, &p[i], jerr);
-		DAHDR(p)->len++;
-		if (update && s->ur) {
-			s->ur(s->update_entry, DAHDR(p)->len, len, "collecting tracks");
+	iter = yyjson_arr_iter_with(songs);
+	i = 0;
+	while ((song = yyjson_arr_iter_next(&iter))) {
+		if (i >= len) {
+			break;
 		}
+		ncm_json2playitem(song, &p[i], jerr);
+		if (update && s->ur) {
+			s->ur(s->update_entry, i, len, "collecting tracks");
+		}
+		++i;
 	}
+	if (update && s->ur) {
+		s->ur(s->update_entry, i, len, "collecting tracks");
+	}
+	assert(i == len);
+	DAHDR(p)->len = i;
 	if (update && s->uc)
 		s->uc(s->update_entry);
-	assert(DAHDR(p)->len == len);
 	ret = len;
 
 cleanup:
@@ -572,7 +581,7 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 
 	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
 	if (http_code != 200) {
-		// TODO
+		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	ret = 0;
@@ -668,7 +677,7 @@ bool ncm_check_username(ncm_source *s)
 
 	cmp = u8scmp(username, s->username, &cmp_result);
 	if (cmp_result != U8S_OK) {
-		// TODO log
+		error("ncm failed to compare utf8 string %s:%s", username, s->username);
 		ret = false;
 	}
 	ret = (cmp == 0);

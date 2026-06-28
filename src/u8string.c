@@ -429,7 +429,8 @@ u8s u8scatprintf(u8s s, const char *fmt, ...)
 }
 
 // TODO
-
+void u8ssubstr(u8s s, size_t start, size_t len);
+void u8srange(u8s s, u8s_ssize_t start, u8s_ssize_t end);
 void u8sclear(u8s s)
 {
 	u8ssetblen(s, 0);

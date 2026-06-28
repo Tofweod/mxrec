@@ -243,7 +243,6 @@ int lastfmapi_latrack2playitem(la_track *ltr, playitem *pi)
 	pi->tr = tr;
 
 	// add url
-	// TODO
 	return 0;
 }
 

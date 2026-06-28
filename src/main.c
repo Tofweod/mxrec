@@ -157,16 +157,21 @@ static void mxrec_usage()
 	printf("Usage: %s [options]\n", PROG_NAME);
 	printf("Options:\n");
 	printf("  -c, --config=<file>          Path to config file\n");
-	printf("  -s, --disable-strict         Disable strict mode(default false)\n");
 	printf("  -S <source>                  Enable source (use multiple times)\n");
 	printf("                               Sources: ");
 #define MXREC_SOURCE(name) printf("%s ", #name);
 	MXREC_SOURCE_LIST
 #undef MXREC_SOURCE
 	printf("\n");
-	printf("  -t, --target=<N>             Number of tracks to collect (default 20)\n");
+	printf("  -t, --export-type=<type>     Export type (");
+#define DUMP_TYPE(type, ...) printf("%s|", #type);
+	DUMP_TYPE_LIST
+#undef DUMP_TYPE
+	printf("\b)\n");
+	printf("  -n, --target=<N>             Number of tracks to collect (default 20)\n");
 	printf("  -p, --show-progress          Show progress bar (default false)\n");
 	printf("  -T, --enable-threads         Enable threads (default false)\n");
+	printf("  -s, --disable-strict         Disable strict mode(default false)\n");
 	printf("  -h, --help                   Show this help\n");
 	printf("\nConfig overrides (--<name>=<value>):\n");
 #define CONFIG_FIELD(type, name, cli, dtor, desc) printf("  --%-35s  (%s)\n", cli, desc);
@@ -401,7 +406,16 @@ static void mxrec_sources_free()
 	}
 }
 
-enum dumpType str2dumptype(const char *type_str) {}
+enum dumpType str2dumptype(const char *type_str)
+{
+#define DUMP_TYPE(str, type)                                                                                           \
+	if (strncmp(type_str, #str, DUMP_TYPE_STR_SIZE) == 0)                                                          \
+		return DUMP2##type;
+	DUMP_TYPE_LIST
+#undef DUMP_TYPE
+	panic("mxrec failed to parse dump type");
+	mxrec_unreachable();
+}
 
 int main(int argc, char **argv)
 {
@@ -474,8 +488,10 @@ int main(int argc, char **argv)
 	source_task_collect_all(tasks, &pl, enable_threads);
 	task_bus_destroy();
 
-	// TODO
-	dump(pl->dh, stdout, &pl, da_len(pl), DUMP2JSON);
+	// TODO mix
+	
+	fprintf(stdout, "mxrec recommended playlist:\n");
+	dump(pl->dh, stdout, &pl, da_len(pl), str2dumptype(dumptype));
 
 cleanup:
 	playlist_free(pl);
