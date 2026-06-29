@@ -286,13 +286,14 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 			mxrec_usage();
 			return 1;
 		case '?':
-			printf("Unknown option: %s\n"
-			       "Use --help for a list of options\n",
-			       argv[optind - 1]);
+			fprintf(stderr,
+				"Unknown option: %s\n"
+				"Use --help for a list of options\n",
+				argv[optind - 1]);
 			return 1;
 		default:
 			if (cli_set_field(opts, opt, optarg)) {
-				printf("invalid value for --%s: %s\n", cli_long_opts[idx].name, optarg);
+				fprintf(stderr, "invalid value for --%s: %s\n", cli_long_opts[idx].name, optarg);
 				return -1;
 			}
 		}
@@ -489,7 +490,7 @@ int main(int argc, char **argv)
 	task_bus_destroy();
 
 	// TODO mix
-	
+
 	fprintf(stdout, "mxrec recommended playlist:\n");
 	dump(pl->dh, stdout, &pl, da_len(pl), str2dumptype(dumptype));
 

@@ -15,4 +15,4 @@
 	url = https://github.com/fukuchi/libqrencode.git
 [submodule "lib/indicators"]
 	path = lib/indicators
-	url = https://github.com/p-ranav/indicators.git
+	url = https://github.com/Tofweod/indicators.git
