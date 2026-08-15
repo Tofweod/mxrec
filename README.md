@@ -9,22 +9,33 @@ Building the main program requires:
 - `gcc`, `g++`
 - `make`
 - `cmake`
+- `autoconf`
+- `automake`
+- `libtool`
 - `pkg-config`
 - libcurl development headers
 
 On Debian / Ubuntu:
 
 ```bash
-sudo apt install build-essential make cmake pkg-config libcurl4-openssl-dev
+sudo apt install build-essential make cmake autoconf automake libtool pkg-config libcurl4-openssl-dev
 ```
 
 On Fedora / RHEL:
 
 ```bash
-sudo dnf install gcc gcc-c++ make cmake pkg-config libcurl-devel
+sudo dnf install gcc gcc-c++ make cmake autoconf automake libtool pkg-config libcurl-devel
 ```
 
 ## 2. Build
+
+Clone the repository and initialize submodules:
+
+```bash
+git clone <repository-url>
+cd mxrec
+git submodule update --init --recursive
+```
 
 Build the main executable:
 
