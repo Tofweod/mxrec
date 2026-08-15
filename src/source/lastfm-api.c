@@ -752,7 +752,7 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 {
 	int ret;
 	size_t i;
-	size_t idx, *idxs, map_size;
+	size_t idx, *idxs = NULL, map_size;
 	size_t src_size;
 	lastfmapi_diffusion_strategy strategy = ls->strategy;
 #ifdef LASTFMAPI_DEBUG

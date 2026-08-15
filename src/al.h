@@ -12,7 +12,7 @@ struct merge_params;
 	MERGE_AL(weighted, double *weights; size_t count;)                                                             \
 	MERGE_AL(priority, )                                                                                           \
 	MERGE_AL(round_robin, )                                                                                        \
-	MERGE_AL(reservoir, uint64_t seed;)
+	MERGE_AL(reservoir, )
 
 struct merge_params {
 	int (*merge_source)(playlist *result, size_t wanted, playlist *sources, size_t source_size,

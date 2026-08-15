@@ -29,6 +29,14 @@ void progress_free(progress *p)
 	delete p;
 }
 
+void progress_bar_free(prog_bar *b)
+{
+	if (!b)
+		return;
+	delete b->bar;
+	delete b;
+}
+
 prog_bar *progress_bar_add(progress *p, const char *name, size_t total)
 {
 	auto *b = new prog_bar;

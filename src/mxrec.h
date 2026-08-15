@@ -1,23 +1,14 @@
 #ifndef TOF_MXREC_H
 #define TOF_MXREC_H
 
-#include "al.h"
+#include "al.h"		// IWYU pragma: keep
+#include "al/al-comm.h" // IWYU pragma: keep
 #include "config.h"
 #include "dump.h"
+#include "sample.h" // IWYU pragma: keep
 #include "source.h"
 
 #define PROG_NAME "mxrec"
-
-#define MERGE_AL(prefix, ...)                                                                                          \
-	struct prefix##_params {                                                                                       \
-		int (*merge_source)(playlist * result, size_t wanted, playlist *sources, size_t source_size,           \
-				    struct merge_params *params);                                                      \
-		size_t (*sample_source)(playlist * dst, size_t n, playlist src, size_t cursor, void *params);          \
-		void *sample_data;                                                                                     \
-		__VA_ARGS__                                                                                            \
-	};
-MERGE_AL_LIST
-#undef MERGE_AL
 
 #define MXREC_SOURCE_LIST                                                                                              \
 	MXREC_SOURCE(lastfmapi)                                                                                        \
@@ -37,8 +28,7 @@ extern size_t source_count;
 void sources_build(config_t *cfg, const char **names, size_t count);
 
 #define DUMP_TYPE_STR_SIZE 10UL
-#define DUMP_TYPE_LIST       \
-    DUMP_TYPE(json, JSON)
+#define DUMP_TYPE_LIST DUMP_TYPE(json, JSON)
 
 enum dumpType str2dumptype(const char *type_str);
 

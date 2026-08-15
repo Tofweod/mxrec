@@ -14,6 +14,7 @@ typedef struct prog_bar   prog_bar;
 progress *progress_new(bool threaded);
 void      progress_free(progress *p);
 prog_bar *progress_bar_add(progress *p, const char *name, size_t total);
+void      progress_bar_free(prog_bar *b);
 void      progress_bar_update(prog_bar *b, size_t done, size_t total, const char *desc);
 void      progress_bar_tick(prog_bar *b, size_t total, const char *desc);
 

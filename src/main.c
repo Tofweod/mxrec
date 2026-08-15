@@ -88,7 +88,7 @@ static void source_task_spawn(struct source_task *task, size_t idx, bool enable_
 	}
 }
 
-static void source_task_collect_all(struct source_task *tasks, playlist *out, bool enable_threads)
+static void source_task_collect_all(struct source_task *tasks, bool enable_threads)
 {
 	size_t i, remain;
 	if (enable_threads) {
@@ -98,22 +98,18 @@ static void source_task_collect_all(struct source_task *tasks, playlist *out, bo
 			pthread_cond_wait(&task_bus.cond, &task_bus.lock);
 			for (i = 0; i < task_bus.total; ++i) {
 				if (MXREC_BITTEST(task_bus.mask, i) && !tasks[i].collected) {
-					if (tasks[i].ret > 0) {
-						da_append_arr(*out, tasks[i].pl, tasks[i].ret);
-						da_free(tasks[i].pl);
-					}
 					tasks[i].collected = true;
 					--remain;
 				}
 			}
 		}
 		pthread_mutex_unlock(&task_bus.lock);
+		for (i = 0; i < task_bus.total; ++i) {
+			pthread_join(tasks[i].thread, NULL);
+		}
 	} else {
 		for (i = 0; i < task_bus.total; ++i) {
-			if (tasks[i].ret > 0) {
-				da_append_arr(*out, tasks[i].pl, tasks[i].ret);
-				da_free(tasks[i].pl);
-			}
+			tasks[i].collected = true;
 		}
 	}
 }
@@ -177,6 +173,8 @@ static void mxrec_usage()
 #define CONFIG_FIELD(type, name, cli, dtor, desc) printf("  --%-35s  (%s)\n", cli, desc);
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
+	printf("\nNote: --sample and --merge configure the final multi-source merge.\n");
+	printf("      merge=weighted uses per-source merge_weight from the config file.\n");
 }
 
 static int cli_set_uint64_t(void *field, const char *val)
@@ -418,15 +416,96 @@ enum dumpType str2dumptype(const char *type_str)
 	mxrec_unreachable();
 }
 
+typedef int (*merge_source_fp)(playlist *, size_t, playlist *, size_t, struct merge_params *);
+typedef size_t (*sample_source_fp)(playlist *, size_t, playlist, size_t, void *);
+
+static double merge_weight_for_source(const char *name)
+{
+	if (strncmp(name, "lastfm", 6) == 0)
+		return config.lastfm_merge_weight;
+	if (strcmp(name, "ncm") == 0)
+		return config.ncm_merge_weight;
+	return 1.0;
+}
+
+static merge_source_fp str2merge_source(const char *name)
+{
+	if (!name || !*name)
+		return NULL;
+
+#define MERGE_AL(prefix, ...)                                                                                          \
+	if (strcmp(name, #prefix) == 0)                                                                                \
+		return prefix##_merge_sources;
+	MERGE_AL_LIST
+#undef MERGE_AL
+
+	error("unknown merge algorithm: %s", name);
+	return NULL;
+}
+
+static sample_source_fp str2sample_source(const char *name)
+{
+	if (!name || !*name)
+		return NULL;
+
+	if (strcmp(name, "head") == 0)
+		return sample_head;
+	if (strcmp(name, "random") == 0)
+		return sample_random;
+
+	error("unknown sample method: %s", name);
+	return NULL;
+}
+
+static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name,
+					       const char **src_names, size_t source_size)
+{
+	merge_source_fp merge = str2merge_source(merge_name);
+	sample_source_fp sample = str2sample_source(sample_name);
+	size_t i;
+
+	if (!merge || !sample)
+		return NULL;
+
+	if (strcmp(merge_name, "weighted") == 0) {
+		struct weighted_params *p = xcalloc(1, sizeof(*p));
+		p->merge_source = merge;
+		p->sample_source = sample;
+		p->weights = xmalloc(source_size * sizeof(*p->weights));
+		for (i = 0; i < source_size; i++)
+			p->weights[i] = merge_weight_for_source(src_names[i]);
+		p->count = source_size;
+		return (struct merge_params *)p;
+	}
+
+	struct merge_params *p = xcalloc(1, sizeof(*p));
+	p->merge_source = merge;
+	p->sample_source = sample;
+	return p;
+}
+
+static void merge_params_free(struct merge_params *p, const char *merge_name)
+{
+	if (!p)
+		return;
+
+	if (strcmp(merge_name, "weighted") == 0)
+		xfree(((struct weighted_params *)p)->weights);
+
+	xfree(p);
+}
+
 int main(int argc, char **argv)
 {
 	int ret = 0;
 	size_t i, src_count;
+	size_t merged_len = 0;
 	const char *config_file = NULL;
 	const char *src_names[MXREC_SOURCE_COUNT];
 	recomm_option opts;
 	progress *prog = NULL;
-	playlist pl = NULL;
+	playlist *source_pls = NULL;
+	playlist out = NULL;
 
 	globalCurlInit();
 
@@ -485,17 +564,54 @@ int main(int argc, char **argv)
 		source_task_spawn(&tasks[i], i, enable_threads);
 	}
 
-	da_init(pl, sizeof(*pl));
-	source_task_collect_all(tasks, &pl, enable_threads);
+	source_task_collect_all(tasks, enable_threads);
 	task_bus_destroy();
 
-	// TODO mix
+	// tasks keep owning their playlists; source_pls is only a view for merge_sources.
+	source_pls = xmalloc(source_count * sizeof(*source_pls));
+	for (i = 0; i < source_count; i++) {
+		source_pls[i] = tasks[i].ret > 0 ? tasks[i].pl : NULL;
+	}
+
+	da_init(out, sizeof(*out));
+	struct merge_params *params =
+		merge_params_build(config.merge, config.sample, source_names, source_count);
+	if (!params) {
+		error("invalid merge/sample configuration: merge=%s sample=%s",
+		      config.merge ? config.merge : "(null)", config.sample ? config.sample : "(null)");
+		mxrec_cleanup(cleanup, ret, 1);
+	}
+
+	ret = merge_sources(&out, target, source_pls, source_count, params);
+	merge_params_free(params, config.merge);
+	params = NULL;
+
+	if (ret < 0) {
+		error("failed to merge source recommendations");
+		mxrec_cleanup(cleanup, ret, 1);
+	}
+	merged_len = (size_t)ret;
 
 	fprintf(stdout, "mxrec recommended playlist:\n");
-	dump(pl->dh, stdout, &pl, da_len(pl), str2dumptype(dumptype));
+	dump(merged_len ? out->dh : NULL, stdout, &out, merged_len, str2dumptype(dumptype));
 
 cleanup:
-	playlist_free(pl);
+	if (out) {
+		da_free(out);
+	}
+	for (i = 0; i < source_count; i++) {
+		if (tasks[i].pl) {
+			playlist_free(tasks[i].pl);
+		}
+	}
+	xfree(source_pls);
+	if (prog) {
+		for (i = 0; i < source_count; i++) {
+			if (sources[i]->update_entry) {
+				progress_bar_free((prog_bar *)sources[i]->update_entry);
+			}
+		}
+	}
 	progress_free(prog);
 	mxrec_sources_free();
 	configfree(&config);
