@@ -154,7 +154,7 @@ void u8sclear(u8s s);
  * The normalization may failed, therefore it needs to refer to 'result' before
  * using return value.
  */
-#define u8scmp(s1, s2, r, ...) _u8scmp((s1), (s2), (r), (u8s_norm_t){__VA_ARGS__})
+#define u8scmp(s1, s2, r, ...) _u8scmp((s1), (s2), (r), (u8s_norm_t){__VA_ARGS__ + 0})
 int _u8scmp(const u8s s1, const u8s s2, int *result, u8s_norm_t type);
 u8s u8scatrepr(u8s s, const char *p, u8s_size_t len);
 u8s u8sjoin(char **argv, int argc, char *sep);
