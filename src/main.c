@@ -30,6 +30,7 @@ const char *default_src_names[MXREC_SOURCE_COUNT - 1];
 size_t target = 20;
 bool show_progress = false;
 bool enable_threads = false;
+bool ncm_auth = false;
 const char *dumptype = "json";
 bool disable_strict_mode = false;
 
@@ -127,6 +128,7 @@ struct option cli_long_opts[] = {{"config", required_argument, 0, 'c'},
 				 {"target", required_argument, 0, 'n'},
 				 {"show-progress", no_argument, 0, 'p'},
 				 {"enable-threads", no_argument, 0, 'T'},
+				 {"ncm-auth", no_argument, 0, 'A'},
 				 {"export-type", required_argument, 0, 't'},
 				 {"strict", no_argument, 0, 's'},
 #define CONFIG_FIELD(type, name, cli, ...) {cli, required_argument, 0, OPT_##name},
@@ -167,6 +169,7 @@ static void mxrec_usage()
 	printf("  -n, --target=<N>             Number of tracks to collect (default 20)\n");
 	printf("  -p, --show-progress          Show progress bar (default false)\n");
 	printf("  -T, --enable-threads         Enable threads (default false)\n");
+	printf("  -A, --ncm-auth               Obtain NCM login cookie and exit\n");
 	printf("  -s, --disable-strict         Disable strict mode(default false)\n");
 	printf("  -h, --help                   Show this help\n");
 	printf("\nConfig overrides (--<name>=<value>):\n");
@@ -253,7 +256,7 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 
 	opterr = 0;
 
-	while ((opt = getopt_long(argc, argv, "c:S:n:t:spTh", cli_long_opts, &idx)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:S:n:t:spThA", cli_long_opts, &idx)) != -1) {
 		switch (opt) {
 		case 'c':
 			*config_file = optarg;
@@ -279,6 +282,9 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 			break;
 		case 'T':
 			enable_threads = true;
+			break;
+		case 'A':
+			ncm_auth = true;
 			break;
 		case 'h':
 			mxrec_usage();
@@ -519,6 +525,19 @@ int main(int argc, char **argv)
 
 	config_overwrite(&config, &cli_config);
 	configfree(&cli_config);
+
+	if (ncm_auth) {
+		source *auth_src = NULL;
+
+		if (ncm_source_new(&auth_src, &config) < 0) {
+			error("failed to initialize NCM authentication mode");
+			mxrec_cleanup(cleanup, ret, 1);
+		}
+
+		ncm_get_auth(auth_src);
+		source_free(auth_src);
+		mxrec_cleanup(cleanup, ret, 0);
+	}
 
 	if (src_count > 0) {
 		source_names = src_names;

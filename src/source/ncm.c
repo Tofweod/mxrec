@@ -114,6 +114,9 @@ int ncm_module_init(ncm_module *M, ncm_address_type type, const char *address, i
 	M->pid = -1;
 	M->status = NULL;
 
+	if (!work_dir || !*work_dir)
+		work_dir = ".";
+
 	char port_str[LONG_STR_SIZE];
 	ull2string(port_str, LONG_STR_SIZE, port);
 

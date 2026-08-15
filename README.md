@@ -32,6 +32,12 @@ Build the main executable:
 make mxrec
 ```
 
+Build the executable and tests:
+
+```bash
+make
+```
+
 ## 3. Netease module
 
 The NCM source depends on `lib/netease`, a Node.js service.
@@ -122,4 +128,58 @@ If the path is relative, it is resolved from the current working directory of `m
 
 ## 5. How to get the NCM cookie
 
-// TODO
+`mxrec` provides a dedicated NCM authentication mode.
+
+### 5.1 Prepare the Netease module
+
+```bash
+cd lib/netease
+npm install
+cd ../..
+```
+
+Make sure `config.ini` has the correct NCM working directory:
+
+```ini
+[ncm]
+work-dir=lib/netease
+```
+
+### 5.2 Run NCM authentication mode
+
+```bash
+./mxrec --ncm-auth
+```
+
+or:
+
+```bash
+./mxrec -A
+```
+
+This mode will:
+
+1. Start the local NCM Node.js service.
+2. Request a Netease Music login QR code.
+3. Display the QR code in the terminal.
+4. Poll the login status until the QR code is scanned or timeout.
+5. Print the resulting cookie to stdout.
+
+### 5.3 Save the cookie
+
+After the QR login succeeds, copy the printed cookie into the configured cookie file.
+
+For the default relative path in the repository root:
+
+```bash
+printf '%s' '<cookie string>' > .ncm-cookie
+```
+
+Then update `example.ini` or `config.ini`:
+
+```ini
+[ncm]
+username='YourNetEaseNickname'
+cookie-file=.ncm-cookie
+work-dir=lib/netease
+```
