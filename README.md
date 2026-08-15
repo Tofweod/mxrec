@@ -2,6 +2,121 @@
 
 A multi-source music recommendation tool.
 
+## Overview
+
+`mxrec` combines recommendation playlists from multiple music sources into one final playlist.
+
+Currently supported sources:
+
+- Netease Music (`ncm`)
+- Last.fm API (`lastfmapi`)
+- Last.fm Web (`lastfmweb`)
+
+Core capabilities:
+
+- Fetch recommended tracks from multiple music sources.
+- Merge them into a final playlist using configurable algorithms.
+- Sample individual sources using `head` or `random`.
+- Support weighted, uniform, round-robin, priority, proportional, and reservoir merge strategies.
+
+## Usage
+
+### 1. Prepare configuration
+
+```bash
+cp example.ini config.ini
+```
+
+Edit `config.ini`. At minimum, configure:
+
+- Last.fm username and API key
+- NCM username, cookie file, and `work-dir`
+
+See the NCM cookie section below for authentication.
+
+### 2. Get the NCM cookie
+
+Install Netease Node.js dependencies first:
+
+```bash
+cd lib/netease
+npm install
+cd ../..
+```
+
+Then run:
+
+```bash
+./mxrec --ncm-auth
+```
+
+or:
+
+```bash
+./mxrec -A
+```
+
+Scan the QR code shown in the terminal and save the printed cookie to the configured `cookie-file`.
+
+### 3. Generate a merged playlist
+
+Use the default configuration:
+
+```bash
+./mxrec
+```
+
+Select two sources:
+
+```bash
+./mxrec -S lastfmapi -S ncm
+./mxrec -S lastfmapi -S lastfmweb
+```
+
+Set the target number of tracks:
+
+```bash
+./mxrec -S lastfmapi -S ncm -n 20
+```
+
+Specify a config file, merge algorithm, and sampling method:
+
+```bash
+./mxrec --config config.ini --merge=round_robin --sample=head -S lastfmapi -S ncm
+```
+
+### 4. Show all options
+
+```bash
+./mxrec -h
+```
+
+```text
+Usage: mxrec [options]
+Options:
+  -c, --config=<file>          Path to config file
+  -S <source>                  Enable source (use multiple times)
+                               Sources: lastfmapi lastfmweb ncm
+  -t, --export-type=<type>     Export type (json)
+  -n, --target=<N>             Number of tracks to collect (default 20)
+  -p, --show-progress          Show progress bar (default false)
+  -T, --enable-threads         Enable threads (default false)
+  -A, --ncm-auth               Obtain NCM login cookie and exit
+  -s, --disable-strict         Disable strict mode(default false)
+  -h, --help                   Show this help
+```
+
+### 5. Example output
+
+After a successful run, the program prints JSON similar to:
+
+```text
+mxrec recommended playlist:
+{"playlist":[{"track":{"title":"Song A","album":"Album A","artists":[{"name":"Artist A","alias":[]}],"alias":[]},"urls":[]},{"track":{"title":"Song B","album":"Album B","artists":[{"name":"Artist B","alias":[]}],"alias":[]},"urls":[]}]}
+```
+
+Each `track` contains the title, album, artist list, and aliases. `urls` contains playable links and may be an empty array for some sources.
+
 ## 1. Build dependencies
 
 Building the main program requires:
