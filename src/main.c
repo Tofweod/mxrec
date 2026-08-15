@@ -457,8 +457,8 @@ static sample_source_fp str2sample_source(const char *name)
 	return NULL;
 }
 
-static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name,
-					       const char **src_names, size_t source_size)
+static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name, const char **src_names,
+					       size_t source_size)
 {
 	merge_source_fp merge = str2merge_source(merge_name);
 	sample_source_fp sample = str2sample_source(sample_name);
@@ -574,11 +574,10 @@ int main(int argc, char **argv)
 	}
 
 	da_init(out, sizeof(*out));
-	struct merge_params *params =
-		merge_params_build(config.merge, config.sample, source_names, source_count);
+	struct merge_params *params = merge_params_build(config.merge, config.sample, source_names, source_count);
 	if (!params) {
-		error("invalid merge/sample configuration: merge=%s sample=%s",
-		      config.merge ? config.merge : "(null)", config.sample ? config.sample : "(null)");
+		error("invalid merge/sample configuration: merge=%s sample=%s", config.merge ? config.merge : "(null)",
+		      config.sample ? config.sample : "(null)");
 		mxrec_cleanup(cleanup, ret, 1);
 	}
 

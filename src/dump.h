@@ -11,6 +11,6 @@ enum dumpType {
 	DUMP2JSON,
 };
 
-void dump(dumpHandle *dh, FILE *fp, void *ptr, size_t size,enum dumpType);
+void dump(dumpHandle *dh, FILE *fp, void *ptr, size_t size, enum dumpType);
 
 #endif

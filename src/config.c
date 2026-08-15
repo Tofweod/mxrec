@@ -49,8 +49,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	// lastfm
 	cfg->lastfm_method = xstrdup(config_get_string_or_default(d, "lastfm:method", NULL));
 	cfg->lastfm_username = u8snew(config_get_string_or_default(d, "lastfm:username", NULL));
-	cfg->lastfm_security_profile =
-		xstrdup(config_get_string_or_default(d, "lastfm:security-profile", "chrome116"));
+	cfg->lastfm_security_profile = xstrdup(config_get_string_or_default(d, "lastfm:security-profile", "chrome116"));
 
 	// lastfm api
 	cfg->lastfmapi_base_url = xstrdup(config_get_string_or_default(d, "lastfm.api:base-url", NULL));
@@ -68,12 +67,9 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->lastfmweb_base_url = xstrdup(config_get_string_or_default(d, "lastfm.web:base-url", NULL));
 	removeURLEndSlash(cfg->lastfmweb_base_url);
 	cfg->lastfmweb_recomm_path = xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-path", NULL));
-	cfg->lastfmweb_recomm_method =
-		xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-method", "GET"));
-	cfg->lastfmweb_recomm_parameter =
-		xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-parameter", NULL));
-	cfg->lastfmweb_recomm_accept =
-		xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-accept", NULL));
+	cfg->lastfmweb_recomm_method = xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-method", "GET"));
+	cfg->lastfmweb_recomm_parameter = xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-parameter", NULL));
+	cfg->lastfmweb_recomm_accept = xstrdup(config_get_string_or_default(d, "lastfm.web:recomm-accept", NULL));
 
 	// ncm
 	cfg->ncm_username = u8snew(config_get_string_or_default(d, "ncm:username", NULL));

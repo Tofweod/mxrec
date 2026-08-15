@@ -25,7 +25,7 @@ struct da_hdr {
 #define da_init2(arr, _size, cap)                                                                                      \
 	do {                                                                                                           \
 		assert((arr) == NULL);                                                                                 \
-		struct da_hdr *hdr = xmalloc(DAHDRSIZE + (_size) * (cap));                                           \
+		struct da_hdr *hdr = xmalloc(DAHDRSIZE + (_size) * (cap));                                             \
 		hdr->len = 0;                                                                                          \
 		hdr->alloc = (cap);                                                                                    \
 		hdr->size = (_size);                                                                                   \
@@ -62,7 +62,7 @@ struct da_hdr {
 	do {                                                                                                           \
 		(dest) = da_reverse((dest), (n));                                                                      \
 		struct da_hdr *hdr = DAHDR((dest));                                                                    \
-		memcpy((dest) + hdr->len, (src), (n) * hdr->size);                                                    \
+		memcpy((dest) + hdr->len, (src), (n) * hdr->size);                                                     \
 		hdr->len += (n);                                                                                       \
 	} while (0)
 

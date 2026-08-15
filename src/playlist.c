@@ -17,7 +17,7 @@ static void playitemdump2json(FILE *fp, void *ptr)
 
 	fprintf(fp, "{");
 
-	 /* track */
+	/* track */
 	fprintf(fp, "\"track\":");
 	if (pi->tr && pi->tr->dh && pi->tr->dh->dump2json)
 		pi->tr->dh->dump2json(fp, pi->tr);

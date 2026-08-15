@@ -4,9 +4,9 @@
 #include "assert.h"
 #include "playlist.h"
 #include "xmalloc.h"
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /**
  * void* pointer 'sp' points to a concret source implement.

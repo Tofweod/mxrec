@@ -9,12 +9,11 @@
 	CONFIG_FIELD(uint64_t, timeout, "timeout", (void), "request timeout (ms)")                                     \
 	CONFIG_FIELD(uint64_t, max_try, "max-try", (void), "max retry count")                                          \
 	CONFIG_FIELD(char *, sample, "sample", xfree, "final playlist sampling method: head|random")                   \
-	CONFIG_FIELD(char *, merge, "merge", xfree,                                                                     \
-		     "merge algorithm: uniform|proportional|weighted|priority|round_robin|reservoir")                 \
-	CONFIG_FIELD(double, lastfm_merge_weight, "lastfm-merge-weight", (void),                                      \
-		     "Last.fm merge weight, used by weighted merge")                                                \
-	CONFIG_FIELD(double, ncm_merge_weight, "ncm-merge-weight", (void),                                            \
-		     "NCM merge weight, used by weighted merge")                                                   \
+	CONFIG_FIELD(char *, merge, "merge", xfree,                                                                    \
+		     "merge algorithm: uniform|proportional|weighted|priority|round_robin|reservoir")                  \
+	CONFIG_FIELD(double, lastfm_merge_weight, "lastfm-merge-weight", (void),                                       \
+		     "Last.fm merge weight, used by weighted merge")                                                   \
+	CONFIG_FIELD(double, ncm_merge_weight, "ncm-merge-weight", (void), "NCM merge weight, used by weighted merge") \
 	CONFIG_FIELD(u8s, lastfm_username, "lastfm-username", u8sfree, "Last.fm username")                             \
 	CONFIG_FIELD(char *, lastfm_security_profile, "lastfm-security-profile", xfree, "Last.fm security profile")    \
 	CONFIG_FIELD(char *, lastfm_method, "lastfm-method", xfree, "Last.fm API method")                              \
