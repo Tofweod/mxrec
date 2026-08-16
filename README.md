@@ -142,7 +142,7 @@ On Fedora / RHEL:
 sudo dnf install gcc gcc-c++ make cmake autoconf automake libtool pkg-config libcurl-devel
 ```
 
-## 2. Build
+## 2. Project Build
 
 Clone the repository and initialize submodules:
 
@@ -243,7 +243,9 @@ Weight resolution:
 3. If a source-specific Last.fm weight is omitted, the global `[lastfm] merge_weight` is used.
 4. NCM uses `[ncm] merge_weight`.
 
-### `ncm:work-dir`
+### NCM	
+
+#### `ncm:work-dir`
 
 `work-dir` must point to the directory containing:
 
@@ -265,7 +267,7 @@ You can also use an absolute path:
 work-dir=/home/user/mxrec/lib/netease
 ```
 
-### `ncm:cookie-file`
+#### `ncm:cookie-file`
 
 `cookie-file` is the file that contains the Netease Music login cookie.
 
