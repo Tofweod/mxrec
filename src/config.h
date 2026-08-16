@@ -13,6 +13,10 @@
 		     "merge algorithm: uniform|proportional|weighted|priority|round_robin|reservoir")                  \
 	CONFIG_FIELD(double, lastfm_merge_weight, "lastfm-merge-weight", (void),                                       \
 		     "Last.fm merge weight, used by weighted merge")                                                   \
+	CONFIG_FIELD(double, lastfmapi_merge_weight, "lastfmapi-merge-weight", (void),                                \
+		     "Last.fm API merge weight override; defaults to lastfm global weight")                       \
+	CONFIG_FIELD(double, lastfmweb_merge_weight, "lastfmweb-merge-weight", (void),                                \
+		     "Last.fm Web merge weight override; defaults to lastfm global weight")                      \
 	CONFIG_FIELD(double, ncm_merge_weight, "ncm-merge-weight", (void), "NCM merge weight, used by weighted merge") \
 	CONFIG_FIELD(u8s, lastfm_username, "lastfm-username", u8sfree, "Last.fm username")                             \
 	CONFIG_FIELD(char *, lastfm_security_profile, "lastfm-security-profile", xfree, "Last.fm security profile")    \

@@ -218,6 +218,31 @@ cookie-file=.ncm-cookie
 work-dir=lib/netease
 ```
 
+### Merge weights
+
+When `merge=weighted`, each source has a weight:
+
+```ini
+[lastfm]
+merge_weight=1.0
+
+[lastfm.api]
+merge_weight=1.0
+
+[lastfm.web]
+merge_weight=1.0
+
+[ncm]
+merge_weight=1.0
+```
+
+Weight resolution:
+
+1. `lastfmapi` first uses `[lastfm.api] merge_weight`.
+2. `lastfmweb` first uses `[lastfm.web] merge_weight`.
+3. If a source-specific Last.fm weight is omitted, the global `[lastfm] merge_weight` is used.
+4. NCM uses `[ncm] merge_weight`.
+
 ### `ncm:work-dir`
 
 `work-dir` must point to the directory containing:

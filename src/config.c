@@ -44,6 +44,10 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->sample = xstrdup(config_get_string_or_default(d, "general:sample", "head"));
 	cfg->merge = xstrdup(config_get_string_or_default(d, "general:merge", "round_robin"));
 	cfg->lastfm_merge_weight = iniparser_getdouble(d, "lastfm:merge_weight", 1.0);
+	cfg->lastfmapi_merge_weight =
+		iniparser_getdouble(d, "lastfm.api:merge-weight", cfg->lastfm_merge_weight);
+	cfg->lastfmweb_merge_weight =
+		iniparser_getdouble(d, "lastfm.web:merge-weight", cfg->lastfm_merge_weight);
 	cfg->ncm_merge_weight = iniparser_getdouble(d, "ncm:merge_weight", 1.0);
 
 	// lastfm

@@ -427,6 +427,10 @@ typedef size_t (*sample_source_fp)(playlist *, size_t, playlist, size_t, void *)
 
 static double merge_weight_for_source(const char *name)
 {
+	if (strcmp(name, "lastfmapi") == 0)
+		return config.lastfmapi_merge_weight;
+	if (strcmp(name, "lastfmweb") == 0)
+		return config.lastfmweb_merge_weight;
 	if (strncmp(name, "lastfm", 6) == 0)
 		return config.lastfm_merge_weight;
 	if (strcmp(name, "ncm") == 0)
