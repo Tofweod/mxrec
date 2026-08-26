@@ -5,3 +5,4 @@ obj/
 .gdb_history
 config.ini
 *cookie
+lib/netease/.node_modules.stamp

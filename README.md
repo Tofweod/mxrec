@@ -30,7 +30,7 @@ cp example.ini config.ini
 Edit `config.ini`. At minimum, configure:
 
 - Last.fm username and API key
-- NCM username, cookie file, and `work-dir`
+- NCM username and cookie file; `work-dir` can usually be left empty
 
 See the NCM cookie section below for authentication.
 
@@ -164,6 +164,38 @@ Build the executable and tests:
 make
 ```
 
+## 2.1 Install and uninstall
+
+Install `mxrec`, the NCM Node.js module, the custom libcurl library, and a generated config file:
+
+```bash
+make install
+```
+
+Optional variables:
+
+```bash
+make install PREFIX=/usr/local
+make install DESTDIR=/tmp/package-root PREFIX=/usr
+```
+
+Installed layout:
+
+```text
+/usr/local/bin/mxrec
+/usr/local/share/mxrec/config.ini
+/usr/local/share/mxrec/netease/
+/usr/local/lib/mxrec/curl-impersonate/
+```
+
+Uninstall:
+
+```bash
+make uninstall
+```
+
+`make mxrec` installs the Netease Node.js dependencies into `lib/netease/node_modules`, so `make install` copies the complete module without running `npm install` again.
+
 ## 3. Netease module
 
 The NCM source depends on `lib/netease`, a Node.js service.
@@ -215,8 +247,10 @@ Important NCM settings:
 [ncm]
 username='YourNetEaseNickname'
 cookie-file=.ncm-cookie
-work-dir=lib/netease
+work-dir=
 ```
+
+If `work-dir` is empty, `mxrec` uses the path baked in at compile time via `NCM_DEFAULT_WORK_DIR`.
 
 ### Merge weights
 
@@ -247,24 +281,30 @@ Weight resolution:
 
 #### `ncm:work-dir`
 
-`work-dir` must point to the directory containing:
+`work-dir` should point to the directory containing:
 
 ```text
-lib/netease/server.js
-lib/netease/package.json
-lib/netease/node_modules
+server.js
+package.json
+node_modules
 ```
 
-For example, when running `mxrec` from the repository root:
+By default it is empty:
 
 ```ini
-work-dir=lib/netease
+work-dir=
 ```
 
-You can also use an absolute path:
+When empty, `mxrec` uses the compile-time default set by the Makefile macro `NCM_DEFAULT_WORK_DIR`. For `make install`, this default is the installed path, for example:
+
+```text
+/usr/local/share/mxrec/netease
+```
+
+You can still override it explicitly:
 
 ```ini
-work-dir=/home/user/mxrec/lib/netease
+work-dir=/opt/mxrec/netease
 ```
 
 #### `ncm:cookie-file`
@@ -291,11 +331,13 @@ npm install
 cd ../..
 ```
 
-Make sure `config.ini` has the correct NCM working directory:
+Make sure the installed `mxrec` was built with the expected `PREFIX`, or set `work-dir` explicitly in `config.ini`.
+
+If using the default install layout, leave it empty:
 
 ```ini
 [ncm]
-work-dir=lib/netease
+work-dir=
 ```
 
 ### 5.2 Run NCM authentication mode
@@ -334,5 +376,5 @@ Then update `example.ini` or `config.ini`:
 [ncm]
 username='YourNetEaseNickname'
 cookie-file=.ncm-cookie
-work-dir=lib/netease
+work-dir=
 ```

@@ -11,6 +11,10 @@
 
 #define PACKAGE "mxrec"
 
+#ifndef NCM_DEFAULT_WORK_DIR
+#define NCM_DEFAULT_WORK_DIR NULL
+#endif
+
 static void removeURLEndSlash(char *url)
 {
 	if (!url)
@@ -77,7 +81,7 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 
 	// ncm
 	cfg->ncm_username = u8snew(config_get_string_or_default(d, "ncm:username", NULL));
-	cfg->ncm_work_dir = xstrdup(config_get_string_or_default(d, "ncm:work-dir", NULL));
+	cfg->ncm_work_dir = xstrdup(config_get_string_or_default(d, "ncm:work-dir", NCM_DEFAULT_WORK_DIR));
 	cfg->ncm_cookie_file = xstrdup(config_get_string_or_default(d, "ncm:cookie-file", NULL));
 	cfg->ncm_bind_method = xstrdup(config_get_string_or_default(d, "ncm:bind-method", "http"));
 	cfg->ncm_bind_address = xstrdup(config_get_string_or_default(d, "ncm:bind-address", NULL));
