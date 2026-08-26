@@ -128,18 +128,19 @@ Building the main program requires:
 - `automake`
 - `libtool`
 - `pkg-config`
+- `patchelf`
 - libcurl development headers
 
 On Debian / Ubuntu:
 
 ```bash
-sudo apt install build-essential make cmake autoconf automake libtool pkg-config libcurl4-openssl-dev
+sudo apt install build-essential make cmake autoconf automake libtool pkg-config patchelf libcurl4-openssl-dev
 ```
 
 On Fedora / RHEL:
 
 ```bash
-sudo dnf install gcc gcc-c++ make cmake autoconf automake libtool pkg-config libcurl-devel
+sudo dnf install gcc gcc-c++ make cmake autoconf automake libtool pkg-config patchelf libcurl-devel
 ```
 
 ## 2. Project Build
