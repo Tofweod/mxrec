@@ -235,10 +235,16 @@ Normally `mxrec` starts this service automatically according to the `[ncm]` sect
 
 ## 4. Configuration
 
-Copy `example.ini` to `config.ini` and edit it:
+When `--config` is not provided, `mxrec` looks for its config file in the following order:
+
+1. `$XDG_CONFIG_HOME/mxrec/config` if `XDG_CONFIG_HOME` is set.
+2. `$HOME/.config/mxrec/config` otherwise.
+
+For local development, copy `example.ini` to `config.ini` in the repository root and pass it explicitly:
 
 ```bash
 cp example.ini config.ini
+./mxrec -c config.ini
 ```
 
 Important NCM settings:
