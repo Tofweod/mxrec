@@ -1,63 +1,40 @@
 #include "al-comm.h"
-#include "comm.h"
+#include "assert.h"
 #include "da.h"
+#include "merge-state.h"
 #include "random.h"
 #include "xmalloc.h"
-#include <string.h>
 
-int reservoir_merge_sources(playlist *result, size_t wanted, playlist *sources, size_t source_size,
-			    struct merge_params *params)
+int reservoir_merge_sources(merge_state *state, struct merge_params *params)
 {
 	(void)params;
-	double *rands;
-	size_t i, j, k, total, cnt;
-
-	if (unlikely(source_size == 0 || wanted == 0))
+	track_key_set seen = {0};
+	size_t visited = 0;
+	int ret = -1;
+	if (!state->wanted)
 		return 0;
-	if (unlikely(!result))
-		return -1;
-
-	total = 0;
-	for (i = 0; i < source_size; i++) {
-		if (!sources[i])
-			continue;
-		total += da_len(sources[i]);
-	}
-
-	if (total <= wanted) {
-		for (i = 0; i < source_size; i++) {
-			size_t src_len;
-			if (!sources[i])
+	for (size_t i = 0; i < state->source_count; i++) {
+		merge_source_state *source = &state->sources[i];
+		for (size_t j = 0; j < source->len; j++) {
+			merge_candidate *candidate = &source->items[j];
+			/* Remember every unique song, including displaced reservoir entries. */
+			if (!track_key_set_add(&seen, &candidate->key))
 				continue;
-			src_len = da_len(sources[i]);
-			da_append_arr(*result, sources[i], src_len);
-		}
-		return (int)total;
-	}
-
-	rands = xmalloc(total * sizeof(double));
-	if (unlikely(uniform01Array(rands, total))) {
-		xfree(rands);
-		return -1;
-	}
-
-	cnt = 0;
-	for (i = 0; i < source_size; i++) {
-		if (!sources[i])
-			continue;
-		size_t src_len = da_len(sources[i]);
-		for (j = 0; j < src_len; j++) {
-			if (cnt < wanted) {
-				da_append(*result, sources[i][j]);
+			visited++;
+			if (da_len(*state->result) < state->wanted) {
+				da_append(*state->result, *candidate->item);
 			} else {
-				k = (size_t)(rands[cnt] * (cnt + 1));
-				if (k < wanted)
-					(*result)[k] = sources[i][j];
+				double value;
+				if (uniform01(&value) < 0)
+					goto cleanup;
+				size_t index = (size_t)(value * visited);
+				if (index < state->wanted)
+					(*state->result)[index] = *candidate->item;
 			}
-			cnt++;
 		}
 	}
-
-	xfree(rands);
-	return (int)wanted;
+	ret = (int)da_len(*state->result);
+cleanup:
+	track_key_set_free(&seen);
+	return ret;
 }

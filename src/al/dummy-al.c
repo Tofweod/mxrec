@@ -1,11 +1,11 @@
 #include "al-comm.h"
 #include "assert.h"
-#include "comm.h"
+#include "da.h"
+#include "merge-state.h"
 
-int dummy_merge_sources(playlist *result mxrec_unused, size_t wanted mxrec_unused, playlist *sources mxrec_unused,
-			size_t source_size mxrec_unused, struct merge_params *params mxrec_unused)
+int dummy_merge_sources(merge_state *state, struct merge_params *params)
 {
-	error("using dummy merge sources algorithm, "
-	      "please change to a concrete implementation.");
+	(void)state;
+	(void)params;
 	return -1;
 }

@@ -259,6 +259,14 @@ work-dir=
 
 If `work-dir` is empty, `mxrec` uses the path baked in at compile time via `NCM_DEFAULT_WORK_DIR`.
 
+### Last.fm history window
+
+`[lastfm.api] period` is a positive duration, for example `1week` means
+604800 seconds. Bare integers are interpreted as seconds; units such as `s`,
+`min`, `h`, `day`, and `week` are supported. Absolute dates are not accepted here.
+The duration is used for time scoring, while the API query uses `now - period`
+as its start timestamp. Invalid, zero, and overflowing durations are rejected.
+
 ### Merge weights
 
 When `merge=weighted`, each source has a weight:
@@ -283,6 +291,79 @@ Weight resolution:
 2. `lastfmweb` first uses `[lastfm.web] merge_weight`.
 3. If a source-specific Last.fm weight is omitted, the global `[lastfm] merge_weight` is used.
 4. NCM uses `[ncm] merge_weight`.
+
+Weights must be finite and nonnegative, with at least one positive weight when
+sources are configured. A zero weight excludes that source from weighted merging.
+Weights determine preferred shares; unused quotas are redistributed to sources
+that still have candidates.
+
+### Song deduplication
+
+Each source returns at most its requested number of unique songs. Deduplication
+can reduce that number; it does not trigger extra network requests. The final
+merge continues past duplicates and exhausted sources to return
+`min(requested count, eligible unique songs available)`.
+Uniqueness applies within each returned playlist; separate runs can recommend
+the same songs again.
+
+Song identity uses the title and the set of artist names. Both UTF-8 strings and
+`u8s` values use Unicode NFKC normalization, case folding, trimmed whitespace,
+and collapsed internal Unicode whitespace. Artist names are sorted and deduplicated,
+so their order does not affect identity. Album names, aliases, and URLs are excluded;
+punctuation and version suffixes such as `(Live)` remain significant.
+
+For example, `"  Ｓｏｎｇ\tＡ "` and `"song a"` identify the same title.
+Artist lists `["Artist B", " Artist A ", "ARTIST A"]` and
+`["artist a", "artist b"]` identify the same artist set. The title must also
+match for the songs to be considered duplicates. `"Song"` and `"Song (Live)"`
+remain distinct.
+
+An independent `track_key` stores length-prefixed normalized bytes and a hash.
+Hash matches are checked against the full key, so hash collisions do not merge
+different songs. Original display metadata and JSON serialization are unchanged.
+Each source retains its first occurrence of a song in the original order.
+During merging, the selected occurrence supplies the song's metadata and URLs;
+metadata is not combined across occurrences.
+
+All six merge strategies enforce song uniqueness:
+
+| Strategy | Selection and refill behavior |
+| --- | --- |
+| `uniform` | Assign equal source quotas and redistribute shortages among sources with remaining candidates. |
+| `proportional` | Base quotas on each source's unique candidate count and redistribute shortages. |
+| `weighted` | Base quotas on configured positive weights and redistribute shortages; zero-weight sources are excluded. |
+| `priority` | Consume unique candidates from each source in configured order before moving to the next source. |
+| `round_robin` | Take the next available unique song from each source in turn, skipping duplicates and exhausted sources. |
+| `reservoir` | Sample from the global set of distinct songs; repeated occurrences do not add selection weight. |
+
+Quota strategies use largest remainders to allocate integer counts, breaking ties
+in source order. Source shares are preferences: filling the requested count takes
+priority when duplicates or exhausted sources prevent those shares from being met.
+
+For quota, priority, and round-robin strategies, `head` consumes candidates in
+order; `random` shuffles candidate indices once and consumes them without replacement.
+Source arrays are not rearranged. Reservoir uses its own random selection rather
+than the `head`/`random` candidate cursor, and remembers previously displaced songs
+so that later duplicates cannot enter the sample again.
+
+Missing, invalid UTF-8, or normalized-empty titles/artist names are rejected in
+strict mode and skipped in permissive mode. Source playlists retain ownership
+of tracks and URLs; the merged playlist borrows them. Temporary keys and sampling
+state are released after merging.
+
+Run the offline deduplication tests without account configuration or a running
+NCM service:
+
+```bash
+make check-dedup
+# Also account for allocations made by the tested code and static libraries:
+make check-dedup-memory
+```
+
+These tests cover normalization, hash collisions, stable source deduplication,
+all six merge strategies, overlapping and exhausted sources, invalid weights,
+random-number failures, and unchanged source objects. Allocation accounting checks
+that tested code and static libraries leave no outstanding tracked allocations.
 
 ### NCM	
 

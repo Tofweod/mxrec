@@ -1,13 +1,20 @@
 #ifndef TOF_MXREC_SAMPLE_H
 #define TOF_MXREC_SAMPLE_H
 
-#include "playlist.h"
+#include <stdbool.h>
+#include <stddef.h>
 
-struct sample_random_params {
-	int _placeholder;
-};
+enum sample_method { SAMPLE_HEAD, SAMPLE_RANDOM };
 
-size_t sample_head(playlist *dst, size_t n, playlist src, size_t cursor, void *params);
-size_t sample_random(playlist *dst, size_t n, playlist src, size_t cursor, void *params);
+typedef struct sample_cursor {
+	size_t *order;
+	size_t len;
+	size_t cursor;
+} sample_cursor;
+
+/* Iterates without replacement; never rearranges source items. */
+int sample_cursor_init(sample_cursor *state, size_t len, enum sample_method method);
+bool sample_cursor_next(sample_cursor *state, size_t *index);
+void sample_cursor_free(sample_cursor *state);
 
 #endif

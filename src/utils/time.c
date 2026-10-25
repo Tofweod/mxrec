@@ -1,6 +1,7 @@
-#define _GNU_SOURCE
 #include "time.h"
 #include <ctype.h>
+#include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,92 +15,58 @@ time_t mxrec_now(void)
 
 time_t string2timestamp(const char *str)
 {
+	static const struct {
+		const char *name;
+		uintmax_t seconds;
+	} units[] = {
+		{"s", 1},      {"sec", 1},	 {"secs", 1},	    {"second", 1},   {"seconds", 1}, {"m", 60},
+		{"min", 60},   {"mins", 60},	 {"minute", 60},    {"minutes", 60}, {"h", 3600},    {"hr", 3600},
+		{"hrs", 3600}, {"hour", 3600},	 {"hours", 3600},   {"d", 86400},    {"day", 86400}, {"days", 86400},
+		{"w", 604800}, {"week", 604800}, {"weeks", 604800},
+	};
+	char *end;
+	uintmax_t value, multiplier = 1;
+	size_t unit_len;
+	time_t seconds;
+
 	if (!str)
 		return (time_t)-1;
-
 	while (isspace((unsigned char)*str))
 		str++;
-
-	if (*str == '\0')
+	if (!isdigit((unsigned char)*str))
 		return (time_t)-1;
 
-	{
-		struct tm tm = {0};
-		char *rest;
+	errno = 0;
+	value = strtoumax(str, &end, 10);
+	if (errno == ERANGE)
+		return (time_t)-1;
+	while (isspace((unsigned char)*end))
+		end++;
+	const char *unit = end;
+	while (*end && !isspace((unsigned char)*end))
+		end++;
+	unit_len = end - unit;
+	while (isspace((unsigned char)*end))
+		end++;
+	if (*end)
+		return (time_t)-1;
 
-		rest = strptime(str, "%Y-%m-%d %H:%M:%S", &tm);
-		if (rest == NULL)
-			rest = strptime(str, "%Y-%m-%dT%H:%M:%S", &tm);
-		if (rest == NULL)
-			rest = strptime(str, "%Y-%m-%d", &tm);
-
-		if (rest != NULL) {
-			if (*rest == '.') {
-				while (isdigit((unsigned char)*rest))
-					rest++;
-			}
-
-			while (isspace((unsigned char)*rest))
-				rest++;
-			if (*rest == '\0') {
-				tm.tm_isdst = -1;
-				time_t t = mktime(&tm);
-				if (t != (time_t)-1)
-					return t;
+	if (unit_len) {
+		multiplier = 0;
+		for (size_t i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
+			if (strlen(units[i].name) == unit_len && memcmp(unit, units[i].name, unit_len) == 0) {
+				multiplier = units[i].seconds;
+				break;
 			}
 		}
+		if (!multiplier)
+			return (time_t)-1;
 	}
-
-	{
-		char *end;
-		long value = strtol(str, &end, 10);
-		if (str == end || value < 0)
-			return (time_t)-1;
-
-		while (isspace((unsigned char)*end))
-			end++;
-
-		const char *unit_start = end;
-		while (*end && !isspace((unsigned char)*end))
-			end++;
-		size_t uint_len = end - unit_start;
-		while (isspace((unsigned char)*end))
-			end++;
-		if (*end != '\0')
-			return (time_t)-1;
-
-		unsigned long multiplier;
-		if (uint_len == 0) {
-			multiplier = 1;
-		} else if (strncmp(unit_start, "s", 1) == 0 || strncmp(unit_start, "sec", 3) == 0 ||
-			   strncmp(unit_start, "secs", 4) == 0 || strncmp(unit_start, "second", 6) == 0 ||
-			   strncmp(unit_start, "seconds", 7) == 0) {
-			multiplier = 1;
-		} else if (strncmp(unit_start, "m", 1) == 0 || strncmp(unit_start, "min", 3) == 0 ||
-			   strncmp(unit_start, "mins", 4) == 0 || strncmp(unit_start, "minute", 6) == 0 ||
-			   strncmp(unit_start, "minutes", 7) == 0) {
-			multiplier = 60;
-		} else if (strncmp(unit_start, "h", 1) == 0 || strncmp(unit_start, "hr", 2) == 0 ||
-			   strncmp(unit_start, "hrs", 3) == 0 || strncmp(unit_start, "hour", 4) == 0 ||
-			   strncmp(unit_start, "hours", 5) == 0) {
-			multiplier = 3600;
-		} else if (strncmp(unit_start, "d", 1) == 0 || strncmp(unit_start, "day", 3) == 0 ||
-			   strncmp(unit_start, "days", 4) == 0) {
-			multiplier = 86400;
-		} else if (strncmp(unit_start, "w", 1) == 0 || strncmp(unit_start, "week", 4) == 0 ||
-			   strncmp(unit_start, "weeks", 5) == 0) {
-			multiplier = 604800;
-		} else {
-			return (time_t)-1;
-		}
-
-		time_t now = mxrec_now();
-		if (now == (time_t)-1)
-			return (time_t)-1;
-
-		if (value > 0 && (unsigned long)value > (unsigned long)(now / multiplier))
-			return 0;
-
-		return now - (time_t)(value * multiplier);
-	}
+	if (value > (uintmax_t)INTMAX_MAX / multiplier)
+		return (time_t)-1;
+	value *= multiplier;
+	seconds = (time_t)value;
+	if (seconds < 0 || (uintmax_t)seconds != value)
+		return (time_t)-1;
+	return seconds;
 }

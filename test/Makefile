@@ -1,4 +1,5 @@
-TARGETS = $(patsubst %.c, %, $(wildcard *.c))
+DEDUP_TEST_NAMES = track-key-test playlist-unique-test source-unique-test sample-test merge-test
+TARGETS = $(filter-out $(DEDUP_TEST_NAMES),$(patsubst %.c, %, $(wildcard *.c)))
 
 ROOT_SRC = ../src
 ROOT_LIB = ../lib
@@ -73,5 +74,34 @@ progress-test: progress-test.cpp ../obj/./progress.o
 
 clean:
 	rm -rf $(TARGETS)
+	rm -rf $(DEDUP_TEST_DIR)
 
-.PHONY: all clean
+DEDUP_TEST_DIR ?= .dedup-build
+DEDUP_CFLAGS ?= -g3 -Wall
+DEDUP_EXTRA_SOURCES ?=
+DEDUP_LDFLAGS ?=
+DEDUP_SOURCES = $(addprefix $(ROOT_SRC)/, assert.c xmalloc.c u8string.c artist.c track.c playlist.c \
+	utils/file.c utils/normalize.c track-key.c random.c sample.c al.c) $(wildcard $(ROOT_SRC)/al/*.c) $(DEDUP_EXTRA_SOURCES)
+DEDUP_HEADERS = $(wildcard $(ROOT_SRC)/*.h $(ROOT_SRC)/utils/*.h $(ROOT_SRC)/al/*.h) dedup-helpers.h
+DEDUP_BINS = $(addprefix $(DEDUP_TEST_DIR)/,$(DEDUP_TEST_NAMES))
+
+all: $(DEDUP_BINS)
+
+$(ROOT_LIB)/utf8proc/libutf8proc.a:
+	$(MAKE) -C $(ROOT_LIB)/utf8proc
+
+$(DEDUP_BINS): $(DEDUP_TEST_DIR)/%: %.c $(DEDUP_SOURCES) $(DEDUP_HEADERS) $(ROOT_LIB)/utf8proc/libutf8proc.a
+	@mkdir -p $(@D)
+	$(CC) $(DEDUP_CFLAGS) $(INCLUDES) $< $(DEDUP_SOURCES) $(ROOT_LIB)/utf8proc/libutf8proc.a -lm \
+		$(if $(filter sample-test merge-test,$*),-Wl$(comma)--wrap=uniform01) $(DEDUP_LDFLAGS) -o $@
+
+comma := ,
+check-dedup: $(DEDUP_BINS)
+	@set -e; for binary in $(DEDUP_BINS); do "$$binary"; done
+
+check-dedup-memory:
+	$(MAKE) check-dedup DEDUP_TEST_DIR=$(DEDUP_TEST_DIR)/memory \
+		DEDUP_EXTRA_SOURCES=support/allocation-check.c \
+		DEDUP_LDFLAGS='-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=reallocarray,--wrap=strdup,--wrap=strndup,--wrap=free'
+
+.PHONY: all clean check-dedup check-dedup-memory

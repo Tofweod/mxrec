@@ -16,3 +16,4 @@ progress-test
 vgcore.*
 
 *cookie
+.dedup-build/

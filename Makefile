@@ -106,11 +106,18 @@ test: $(OBJS)
 	@echo "Start building tests\n"
 	$(MAKE) -C test
 
+# Offline tests: no NCM service, account configuration or npm installation.
+check-dedup:
+	$(MAKE) -C test check-dedup
+
+check-dedup-memory:
+	$(MAKE) -C test check-dedup-memory
+
 DEP = $(OBJS:.o=.d)
 
 -include $(DEP)
 
-.PHONY : clean cleanobj test install uninstall
+.PHONY : clean cleanobj test check-dedup check-dedup-memory install uninstall
 install: $(TARGET)
 	@command -v $(PATCHELF) >/dev/null 2>&1 || { echo "patchelf is required for install"; exit 1; }
 	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(DATADIR) $(DESTDIR)$(NCMDIR) $(DESTDIR)$(CURLLIBDIR)

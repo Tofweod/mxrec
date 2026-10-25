@@ -4,6 +4,7 @@
 #include "assert.h"
 #include "playlist.h"
 #include "xmalloc.h"
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -67,7 +68,9 @@ typedef void (*source_destroy)(void *sp);
 typedef int (*recomm_single_fp)(source *s, playitem *p, recomm_option opts);
 /**
  * recomm lists of tracks with 'num' and store the result in pointer p.
- * return the real number of array p, else return a negative when error.
+ * The public recomm_multi wrapper returns at most num unique songs, or a
+ * negative number on error. Raw callbacks transfer ownership of *p (including
+ * any partial result on failure) to the wrapper; leave *p NULL if none exists.
  */
 typedef int (*recomm_multi_fp)(source *s, size_t num, playlist *p, recomm_option opts);
 
@@ -143,8 +146,23 @@ static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
 static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option opts)
 {
 	source *s = (source *)sp;
+	int ret;
 	assert(s->rmp);
-	return s->rmp(s, num, p, opts);
+	if (!p)
+		return -1;
+	*p = NULL;
+	if (num > INT_MAX)
+		return -1;
+	if (!num)
+		return 0;
+	ret = s->rmp(s, num, p, opts);
+	if (ret >= 0)
+		ret = playlist_unique_owned(p, num, opts.strict);
+	if (ret < 0) {
+		playlist_free(*p);
+		*p = NULL;
+	}
+	return ret;
 }
 
 static inline void source_free(source *s)

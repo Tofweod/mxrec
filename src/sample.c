@@ -1,50 +1,45 @@
 #include "sample.h"
-#include "da.h"
 #include "random.h"
 #include "xmalloc.h"
+#include <stdint.h>
 #include <string.h>
 
-size_t sample_head(playlist *dst, size_t n, playlist src, size_t cursor, void *params)
+int sample_cursor_init(sample_cursor *state, size_t len, enum sample_method method)
 {
-	size_t src_len, take;
-
-	(void)params;
-	src_len = da_len(src);
-	if (cursor >= src_len)
+	memset(state, 0, sizeof(*state));
+	if ((method != SAMPLE_HEAD && method != SAMPLE_RANDOM) || len > SIZE_MAX / sizeof(size_t))
+		return -1;
+	state->len = len;
+	if (method == SAMPLE_HEAD || !len)
 		return 0;
-	take = cursor + n <= src_len ? n : src_len - cursor;
-	da_append_arr(*dst, src + cursor, take);
-	return take;
+	state->order = xmalloc(len * sizeof(*state->order));
+	for (size_t i = 0; i < len; i++)
+		state->order[i] = i;
+	for (size_t i = len; i > 1; i--) {
+		double value;
+		if (uniform01(&value) < 0) {
+			sample_cursor_free(state);
+			return -1;
+		}
+		size_t j = (size_t)(value * i);
+		size_t tmp = state->order[i - 1];
+		state->order[i - 1] = state->order[j];
+		state->order[j] = tmp;
+	}
+	return 0;
 }
 
-size_t sample_random(playlist *dst, size_t n, playlist src, size_t cursor, void *params)
+bool sample_cursor_next(sample_cursor *state, size_t *index)
 {
-	double *rands;
-	size_t src_len, take, i, k;
+	if (state->cursor >= state->len)
+		return false;
+	*index = state->order ? state->order[state->cursor] : state->cursor;
+	state->cursor++;
+	return true;
+}
 
-	(void)cursor;
-	(void)params;
-	src_len = da_len(src);
-	take = n < src_len ? n : src_len;
-	if (take == 0)
-		return 0;
-
-	rands = xmalloc(take * sizeof(double));
-	if (uniform01Array(rands, take)) {
-		xfree(rands);
-		return 0;
-	}
-
-	for (i = 0; i < take; i++) {
-		k = i + (size_t)(rands[i] * (src_len - i));
-		da_append(*dst, src[k]);
-		if (k != i) {
-			playitem tmp = src[i];
-			src[i] = src[k];
-			src[k] = tmp;
-		}
-	}
-
-	xfree(rands);
-	return take;
+void sample_cursor_free(sample_cursor *state)
+{
+	xfree(state->order);
+	memset(state, 0, sizeof(*state));
 }

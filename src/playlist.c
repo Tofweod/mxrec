@@ -1,9 +1,11 @@
 #include "playlist.h"
 #include "da.h"
 #include "dump.h"
+#include "track-key.h"
 #include "track.h"
 #include "utils/file.h"
 #include "xmalloc.h"
+#include <limits.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -102,4 +104,48 @@ void playlist_free(playlist pl)
 		playitem_free(&pl[i]);
 	}
 	da_free(pl);
+}
+
+int playlist_unique_owned(playlist *pl, size_t limit, bool strict)
+{
+	track_key_set seen = {0};
+	size_t len, kept = 0;
+	bool *keep;
+	int ret = -1;
+	if (!pl || limit > INT_MAX)
+		return -1;
+	len = da_len(*pl);
+	if (!len)
+		return 0;
+	keep = xcalloc(len, sizeof(*keep));
+	for (size_t i = 0; i < len && kept < limit; i++) {
+		track_key key = {0};
+		if (track_key_build((*pl)[i].tr, &key) < 0) {
+			if (strict)
+				goto cleanup;
+			continue;
+		}
+		keep[i] = track_key_set_add(&seen, &key) != 0;
+		kept += keep[i];
+		track_key_free(&key);
+	}
+	kept = 0;
+	for (size_t i = 0; i < len; i++) {
+		if (keep[i]) {
+			if (kept != i) {
+				(*pl)[kept] = (*pl)[i];
+				memset(&(*pl)[i], 0, sizeof((*pl)[i]));
+			}
+			kept++;
+		} else {
+			playitem_free(&(*pl)[i]);
+			memset(&(*pl)[i], 0, sizeof((*pl)[i]));
+		}
+	}
+	DAHDR(*pl)->len = kept;
+	ret = (int)kept;
+cleanup:
+	track_key_set_free(&seen);
+	xfree(keep);
+	return ret;
 }

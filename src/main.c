@@ -422,9 +422,6 @@ enum dumpType str2dumptype(const char *type_str)
 	mxrec_unreachable();
 }
 
-typedef int (*merge_source_fp)(playlist *, size_t, playlist *, size_t, struct merge_params *);
-typedef size_t (*sample_source_fp)(playlist *, size_t, playlist, size_t, void *);
-
 static double merge_weight_for_source(const char *name)
 {
 	if (strcmp(name, "lastfmapi") == 0)
@@ -453,44 +450,44 @@ static merge_source_fp str2merge_source(const char *name)
 	return NULL;
 }
 
-static sample_source_fp str2sample_source(const char *name)
+static int str2sample_method(const char *name, enum sample_method *method)
 {
-	if (!name || !*name)
-		return NULL;
-
-	if (strcmp(name, "head") == 0)
-		return sample_head;
-	if (strcmp(name, "random") == 0)
-		return sample_random;
-
-	error("unknown sample method: %s", name);
-	return NULL;
+	if (name && strcmp(name, "head") == 0) {
+		*method = SAMPLE_HEAD;
+		return 0;
+	}
+	if (name && strcmp(name, "random") == 0) {
+		*method = SAMPLE_RANDOM;
+		return 0;
+	}
+	error("unknown sample method: %s", name ? name : "(null)");
+	return -1;
 }
 
 static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name, const char **src_names,
 					       size_t source_size)
 {
 	merge_source_fp merge = str2merge_source(merge_name);
-	sample_source_fp sample = str2sample_source(sample_name);
+	enum sample_method sample;
 	size_t i;
 
-	if (!merge || !sample)
+	if (!merge || str2sample_method(sample_name, &sample) < 0)
 		return NULL;
 
 	if (strcmp(merge_name, "weighted") == 0) {
 		struct weighted_params *p = xcalloc(1, sizeof(*p));
-		p->merge_source = merge;
-		p->sample_source = sample;
+		p->base.merge_source = merge;
+		p->base.sample = sample;
 		p->weights = xmalloc(source_size * sizeof(*p->weights));
 		for (i = 0; i < source_size; i++)
 			p->weights[i] = merge_weight_for_source(src_names[i]);
 		p->count = source_size;
-		return (struct merge_params *)p;
+		return &p->base;
 	}
 
 	struct merge_params *p = xcalloc(1, sizeof(*p));
 	p->merge_source = merge;
-	p->sample_source = sample;
+	p->sample = sample;
 	return p;
 }
 
