@@ -12,6 +12,13 @@ typedef struct track_key {
 	unsigned hash;
 } track_key;
 
+/* Borrowed UTF-8 bytes; accepts both ordinary strings and u8s contents. */
+typedef struct track_key_text {
+	const char *data;
+	size_t len;
+} track_key_text;
+
+int track_key_build_fields(track_key_text title, const track_key_text *artists, size_t artist_count, track_key *out);
 int track_key_build(const track *tr, track_key *out);
 bool track_key_equal(const track_key *a, const track_key *b);
 void track_key_free(track_key *key);

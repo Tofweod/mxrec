@@ -368,8 +368,10 @@ make check-dedup-memory
 
 These tests cover normalization, hash collisions, stable source deduplication,
 all six merge strategies, overlapping and exhausted sources, invalid weights,
-random-number failures, and unchanged source objects. Allocation accounting checks
-that tested code and static libraries leave no outstanding tracked allocations.
+random-number failures, and unchanged source objects. Source fixtures also verify
+refilling past duplicate prefixes and retaining later NCM response candidates.
+Allocation accounting checks that tested code and static libraries leave no
+outstanding tracked allocations.
 
 ### NCM	
 

@@ -26,7 +26,8 @@ static void write_length(unsigned char **dst, uint64_t value)
 		*(*dst)++ = (unsigned char)(value >> shift);
 }
 
-int track_key_build(const track *tr, track_key *out)
+int track_key_build_fields(track_key_text title_text, const track_key_text *artist_texts, size_t artist_count,
+			   track_key *out)
 {
 	struct key_text title = {0}, *artists = NULL;
 	size_t count = 0, total;
@@ -35,22 +36,21 @@ int track_key_build(const track *tr, track_key *out)
 	if (!out)
 		return -1;
 	memset(out, 0, sizeof(*out));
-	if (!tr || !tr->title || !tr->ar_size || !tr->artists)
+	if (!title_text.data || !artist_count || !artist_texts || artist_count > SIZE_MAX / sizeof(*artists))
 		return -1;
-	if (normalize_utf8_key((const char *)tr->title, u8sblen(tr->title), &title.data, &title.len) < 0 ||
-	    !title.len || title.len > UINT_MAX - 16)
+	if (normalize_utf8_key(title_text.data, title_text.len, &title.data, &title.len) < 0 || !title.len ||
+	    title.len > UINT_MAX - 16)
 		goto cleanup;
-	artists = xcalloc(tr->ar_size, sizeof(*artists));
-	for (unsigned i = 0; i < tr->ar_size; i++) {
-		if (!tr->artists[i] || !tr->artists[i]->name ||
-		    normalize_utf8_key((const char *)tr->artists[i]->name, u8sblen(tr->artists[i]->name),
-				       &artists[i].data, &artists[i].len) < 0 ||
+	artists = xcalloc(artist_count, sizeof(*artists));
+	for (size_t i = 0; i < artist_count; i++) {
+		if (normalize_utf8_key(artist_texts[i].data, artist_texts[i].len, &artists[i].data, &artists[i].len) <
+			    0 ||
 		    !artists[i].len)
 			goto cleanup;
 	}
-	qsort(artists, tr->ar_size, sizeof(*artists), text_cmp);
+	qsort(artists, artist_count, sizeof(*artists), text_cmp);
 	total = 16 + title.len;
-	for (unsigned i = 0; i < tr->ar_size; i++) {
+	for (size_t i = 0; i < artist_count; i++) {
 		if (i && text_cmp(&artists[i - 1], &artists[i]) == 0)
 			continue;
 		if (total > UINT_MAX - 8 || artists[i].len > UINT_MAX - total - 8)
@@ -65,7 +65,7 @@ int track_key_build(const track *tr, track_key *out)
 	memcpy(dst, title.data, title.len);
 	dst += title.len;
 	write_length(&dst, count);
-	for (unsigned i = 0; i < tr->ar_size; i++) {
+	for (size_t i = 0; i < artist_count; i++) {
 		if (i && text_cmp(&artists[i - 1], &artists[i]) == 0)
 			continue;
 		write_length(&dst, artists[i].len);
@@ -76,11 +76,30 @@ int track_key_build(const track *tr, track_key *out)
 	ret = 0;
 cleanup:
 	if (artists) {
-		for (unsigned i = 0; i < tr->ar_size; i++)
+		for (size_t i = 0; i < artist_count; i++)
 			xfree(artists[i].data);
 	}
 	xfree(artists);
 	xfree(title.data);
+	return ret;
+}
+
+int track_key_build(const track *tr, track_key *out)
+{
+	if (!out)
+		return -1;
+	memset(out, 0, sizeof(*out));
+	if (!tr || !tr->title || !tr->ar_size || !tr->artists)
+		return -1;
+	track_key_text *artists = xcalloc(tr->ar_size, sizeof(*artists));
+	for (unsigned i = 0; i < tr->ar_size; i++) {
+		if (tr->artists[i] && tr->artists[i]->name)
+			artists[i] =
+				(track_key_text){(const char *)tr->artists[i]->name, u8sblen(tr->artists[i]->name)};
+	}
+	int ret = track_key_build_fields((track_key_text){(const char *)tr->title, u8sblen(tr->title)}, artists,
+					 tr->ar_size, out);
+	xfree(artists);
 	return ret;
 }
 

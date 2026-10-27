@@ -36,6 +36,26 @@ int main(void)
 	track_key k1 = {0}, k2 = {0};
 	CHECK(track_key_build(one.tr, &k1) == 0);
 	CHECK(track_key_build(two.tr, &k2) == 0 && track_key_equal(&k1, &k2));
+	track_key fields = {0};
+	track_key_text raw_title = {" ＳＯＮＧ ", strlen(" ＳＯＮＧ ")};
+	track_key_text raw_artists[3];
+	for (size_t i = 0; i < 3; i++)
+		raw_artists[i] = (track_key_text){a[i], strlen(a[i])};
+	CHECK(track_key_build_fields(raw_title, raw_artists, 3, &fields) == 0);
+	CHECK(track_key_equal(&k1, &fields));
+	track_key_free(&fields);
+	/* Explicit lengths also support UTF-8 slices without terminating NULs. */
+	track_key_text slice_artists[] = {{"artist ax", 8}, {"artist bx", 8}};
+	CHECK(track_key_build_fields((track_key_text){"songx", 4}, slice_artists, 2, &fields) == 0);
+	CHECK(track_key_equal(&k1, &fields));
+	track_key_free(&fields);
+	CHECK(track_key_build_fields(raw_title, NULL, 3, &fields) < 0 && fields.data == NULL);
+	CHECK(track_key_build_fields(raw_title, raw_artists, 0, &fields) < 0 && fields.data == NULL);
+	CHECK(track_key_build_fields((track_key_text){"\xff", 1}, raw_artists, 3, &fields) < 0 && fields.data == NULL);
+	raw_artists[1] = (track_key_text){NULL, 0};
+	CHECK(track_key_build_fields(raw_title, raw_artists, 3, &fields) < 0 && fields.data == NULL);
+	raw_artists[1] = (track_key_text){" \t ", 3};
+	CHECK(track_key_build_fields(raw_title, raw_artists, 3, &fields) < 0 && fields.data == NULL);
 	CHECK(strcmp((const char *)one.tr->title, " SONG ") == 0);
 	track_key_free(&k2);
 	u8sfree(two.tr->title);

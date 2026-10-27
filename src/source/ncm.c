@@ -437,7 +437,7 @@ void ncm_json2playitem(yyjson_val *val, playitem *pi, struct json_err *jerr)
 }
 
 NCM_DECL
-int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, struct json_err *jerr, bool update)
+int ncm_curlbuf2playlist(source *s, curlbuf *buf, playlist *pl_ref, struct json_err *jerr, bool update)
 {
 	int ret;
 	ncm_json_msg msg = {0};
@@ -462,14 +462,12 @@ int ncm_curlbuf2playlist(source *s, curlbuf *buf, size_t num, playlist *pl_ref, 
 	}
 
 	len = yyjson_arr_size(songs);
-	len = len <= num ? len : num;
+	if (len > INT_MAX)
+		mxrec_cleanup(cleanup, ret, -1);
 	da_init2(p, sizeof(playitem), len);
 	iter = yyjson_arr_iter_with(songs);
 	i = 0;
 	while ((song = yyjson_arr_iter_next(&iter))) {
-		if (i >= len) {
-			break;
-		}
 		ncm_json2playitem(song, &p[i], jerr);
 		if (update && s->ur) {
 			s->ur(s->update_entry, i, len, "collecting tracks");
@@ -636,7 +634,7 @@ int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
-	if ((ret = ncm_curlbuf2playlist(s, &buf, num, p, &jerr, opts.progress_bar)) < 0) {
+	if ((ret = ncm_curlbuf2playlist(s, &buf, p, &jerr, opts.progress_bar)) < 0) {
 		error("failed to extract playlist from ncm json:%s", jerr.msg);
 		mxrec_cleanup(cleanup, ret, ret);
 	}

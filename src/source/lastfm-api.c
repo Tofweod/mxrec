@@ -12,6 +12,7 @@
 #include "random.h"
 #include "source.h"
 #include "source/comm-source.h"
+#include "track-key.h"
 #include "track.h"
 #include "u8string.h"
 #include "uthash.h"
@@ -246,6 +247,44 @@ int lastfmapi_latrack2playitem(la_track *ltr, playitem *pi)
 	return 0;
 }
 
+/* Candidates are already ranked. Only accepted songs need output objects. */
+LASTFMAPI_DECL
+int lastfmapi_select_unique(la_track *const *candidates, size_t count, size_t target, playlist *p_ref, bool strict)
+{
+	track_key_set seen = {0};
+	playlist pl = NULL;
+	int ret = -1;
+	*p_ref = NULL;
+	da_init(pl, sizeof(playitem));
+	for (size_t i = 0; i < count && da_len(pl) < target; i++) {
+		la_track *candidate = candidates[i];
+		track_key key = {0};
+		track_key_text title = {(const char *)candidate->key.name,
+					candidate->key.name ? u8sblen(candidate->key.name) : 0};
+		track_key_text artist = {(const char *)candidate->key.artist,
+					 candidate->key.artist ? u8sblen(candidate->key.artist) : 0};
+		if (track_key_build_fields(title, &artist, 1, &key) < 0) {
+			if (strict)
+				goto cleanup;
+			continue;
+		}
+		bool added = track_key_set_add(&seen, &key) != 0;
+		track_key_free(&key);
+		if (added) {
+			playitem pi;
+			lastfmapi_latrack2playitem(candidate, &pi);
+			da_append(pl, pi);
+		}
+	}
+	ret = (int)da_len(pl);
+	*p_ref = pl;
+	pl = NULL;
+cleanup:
+	track_key_set_free(&seen);
+	playlist_free(pl);
+	return ret;
+}
+
 // core: diffusion recommendation
 typedef enum lastfm_diffusion_strategy {
 	LASTFMAPI_DIFFUSION_ERR = 0,
@@ -444,9 +483,9 @@ LASTFMAPI_DECL
 int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
-			       time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
-			       recomm_option opts);
+int _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
+			      time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+			      recomm_option opts);
 
 LASTFMAPI_DECL
 int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_track *map, playlist *p, time_t period,
@@ -786,9 +825,8 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 	}
 
 	assert(src[0]);
-	_lastfmapi_diffusion_core(src, src_size, strategy, opts.lastfmapi_opts.diffusion, period, target, map, p, ls,
-				  opts);
-	ret = da_len(*p);
+	ret = _lastfmapi_diffusion_core(src, src_size, strategy, opts.lastfmapi_opts.diffusion, period, target, map, p,
+					ls, opts);
 cleanup:
 	xfree(idxs);
 	xfree(src);
@@ -796,16 +834,15 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-void _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
-			       time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
-			       recomm_option opts)
+int _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusion_strategy strategy, int diffusion,
+			      time_t period, size_t target, la_track *map, playlist *p_ref, lastfmapi_source *ls,
+			      recomm_option opts)
 {
 	source *s = &ls->src;
 	size_t i, child_size, diff_num;
 	la_track *cur, **res, **child;
 	char progress_desc[256];
-	playlist pl = NULL;
-	playitem pi;
+	int ret = -1;
 	res = NULL;
 	diff_num = 0;
 	da_init(res, sizeof(*res));
@@ -828,10 +865,8 @@ cleanup_child:
 		s->uc(s->update_entry);
 	}
 	if (_lastfmapi_latracks_score(res, da_len(res), opts.lastfmapi_opts.diff_lambda, period,
-				      opts.lastfmapi_opts.score_beta) < 0) {
-		da_free(res);
-		return;
-	}
+				      opts.lastfmapi_opts.score_beta) < 0)
+		goto cleanup;
 	qsort(res, da_len(res), sizeof(*res), la_track_score_cmp);
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "res of diff core\n");
@@ -840,18 +875,14 @@ cleanup_child:
 	}
 #endif
 
-	da_init(pl, sizeof(playitem));
 	assert(diff_num == da_len(res));
-	diff_num = target < diff_num ? target : diff_num;
-	for (i = 0; i < diff_num; ++i) {
-		lastfmapi_latrack2playitem(res[i], &pi);
-		da_append(pl, pi);
-	}
+	ret = lastfmapi_select_unique(res, da_len(res), target, p_ref, opts.strict);
+cleanup:
 	for (i = 0; i < da_len(res); ++i) {
 		la_track_free(res[i]);
 	}
 	da_free(res);
-	*p_ref = pl;
+	return ret;
 }
 
 LASTFMAPI_DECL
