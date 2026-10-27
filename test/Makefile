@@ -30,8 +30,8 @@ LIBS = \
 
 TYPE = c
 
-all: $(TARGETS)
-	@echo "All tests built"
+all: $(TARGETS) check-dedup check-dedup-memory
+	@echo "All tests built and deduplication checks passed"
 
 u8s-basic: u8s-basic.c $(LIB_OBJS)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) -o $@ $(INCLUDES) $(LIBS) $(LD_FLAGS) $(LD_LIBS)
@@ -95,8 +95,6 @@ $(DEDUP_TEST_DIR)/lastfm-api-unique-test: $(ROOT_SRC)/source/lastfm-api.c
 $(DEDUP_TEST_DIR)/ncm-unique-test: DEDUP_SOURCES += $(ROOT_SRC)/json.c
 $(DEDUP_TEST_DIR)/ncm-unique-test: SOURCE_UNIQUE_LDFLAGS += $(ROOT_LIB)/yyjson/build/libyyjson.a
 $(DEDUP_TEST_DIR)/ncm-unique-test: $(ROOT_SRC)/source/ncm.c $(ROOT_SRC)/json.c $(ROOT_LIB)/yyjson/build/libyyjson.a
-
-all: $(DEDUP_BINS)
 
 $(ROOT_LIB)/utf8proc/libutf8proc.a:
 	$(MAKE) -C $(ROOT_LIB)/utf8proc
