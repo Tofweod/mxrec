@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include "time.h"
 #include <ctype.h>
 #include <errno.h>
@@ -33,6 +34,38 @@ time_t string2timestamp(const char *str)
 		return (time_t)-1;
 	while (isspace((unsigned char)*str))
 		str++;
+
+	static const char *formats[] = {"%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"};
+	for (size_t i = 0; i < sizeof(formats) / sizeof(*formats); i++) {
+		struct tm calendar = {0};
+		char *rest = strptime(str, formats[i], &calendar);
+		if (!rest)
+			continue;
+		/* Fractional seconds are accepted for date-times and truncated. */
+		if (i < 2 && *rest == '.') {
+			rest++;
+			if (!isdigit((unsigned char)*rest))
+				return (time_t)-1;
+			while (isdigit((unsigned char)*rest))
+				rest++;
+		}
+		while (isspace((unsigned char)*rest))
+			rest++;
+		if (*rest)
+			continue;
+		struct tm original = calendar;
+		calendar.tm_isdst = -1;
+		time_t timestamp = mktime(&calendar);
+		if (timestamp == (time_t)-1)
+			return (time_t)-1;
+		/* mktime normalizes invalid calendar dates; reject those inputs. */
+		if (calendar.tm_year != original.tm_year || calendar.tm_mon != original.tm_mon ||
+		    calendar.tm_mday != original.tm_mday || calendar.tm_hour != original.tm_hour ||
+		    calendar.tm_min != original.tm_min || calendar.tm_sec != original.tm_sec)
+			return (time_t)-1;
+		return timestamp;
+	}
+
 	if (!isdigit((unsigned char)*str))
 		return (time_t)-1;
 
@@ -68,5 +101,9 @@ time_t string2timestamp(const char *str)
 	seconds = (time_t)value;
 	if (seconds < 0 || (uintmax_t)seconds != value)
 		return (time_t)-1;
-	return seconds;
+	time_t now = mxrec_now();
+	if (now == (time_t)-1 || now < 0)
+		return (time_t)-1;
+	/* Preserve the original lower bound for relative history windows. */
+	return seconds > now ? 0 : now - seconds;
 }

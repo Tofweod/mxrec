@@ -1397,16 +1397,16 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
 
-	period = string2timestamp(ls->period);
-	if (period <= 0) {
-		error("Last.fm API period must be a positive duration, e.g. 1week");
-		mxrec_cleanup(cleanup, ret, -1);
-	}
 	time_t now = mxrec_now();
 	if (now == (time_t)-1)
 		mxrec_cleanup(cleanup, ret, -1);
-	// The API needs a start timestamp; scoring needs the duration itself.
-	time_t from = period > now ? 0 : now - period;
+	time_t from = string2timestamp(ls->period);
+	if (from < 0 || from >= now) {
+		error("Last.fm API period must select a time before now, e.g. 1week or 2021-01-01");
+		mxrec_cleanup(cleanup, ret, -1);
+	}
+	// The API uses the start timestamp; scoring uses elapsed seconds.
+	period = now - from;
 	char from_s[LONG_STR_SIZE];
 	size_t str_len = ull2string(from_s, LONG_STR_SIZE, from);
 

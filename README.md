@@ -261,11 +261,17 @@ If `work-dir` is empty, `mxrec` uses the path baked in at compile time via `NCM_
 
 ### Last.fm history window
 
-`[lastfm.api] period` is a positive duration, for example `1week` means
-604800 seconds. Bare integers are interpreted as seconds; units such as `s`,
-`min`, `h`, `day`, and `week` are supported. Absolute dates are not accepted here.
-The duration is used for time scoring, while the API query uses `now - period`
-as its start timestamp. Invalid, zero, and overflowing durations are rejected.
+`[lastfm.api] period` accepts either a relative lookback such as `1week`, or an
+absolute local date/time such as `2021-01-01`, `2021-01-01 12:30:00`, or
+`2021-01-01T12:30:00`. Date-times may include fractional seconds, which are
+truncated. Bare integers mean seconds ago; units such as `s`, `min`, `h`, `day`,
+and `week` are supported. Relative lookbacks extending before the Unix epoch
+are clamped to epoch zero.
+
+`string2timestamp()` returns the start timestamp (`from`) for either input form.
+The API query uses `from`; time scoring uses the elapsed duration `now - from`,
+so `1week` gives a scoring scale of 604800 seconds. Invalid dates, overflowing
+lookbacks, pre-epoch absolute starts, and starts at or after now are rejected.
 
 ### Merge weights
 

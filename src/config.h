@@ -23,7 +23,8 @@
 	CONFIG_FIELD(char *, lastfm_method, "lastfm-method", xfree, "Last.fm API method")                              \
 	CONFIG_FIELD(char *, lastfmapi_base_url, "lastfmapi-base-url", xfree, "Last.fm API base URL")                  \
 	CONFIG_FIELD(char *, lastfmapi_key, "lastfmapi-key", xfree, "Last.fm API key")                                 \
-	CONFIG_FIELD(char *, lastfmapi_period, "lastfmapi-period", xfree, "Last.fm history duration, e.g. 1week")      \
+	CONFIG_FIELD(char *, lastfmapi_period, "lastfmapi-period", xfree,                                              \
+		     "Last.fm history start, e.g. 1week or 2021-01-01")                                                \
 	CONFIG_FIELD(char *, lastfmapi_strategy, "lastfmapi-strategy", xfree, "Last.fm API strategy")                  \
 	CONFIG_FIELD(char *, lastfmapi_sample, "lastfmapi-sample", xfree, "Last.fm API diffusion sample: topn|random") \
 	CONFIG_FIELD(uint64_t, lastfmapi_diffusion_level, "lastfmapi-diffusion-level", (void),                         \
