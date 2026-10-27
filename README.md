@@ -104,6 +104,7 @@ Options:
   -A, --ncm-auth               Obtain NCM login cookie and exit
   -s, --disable-strict         Disable strict mode(default false)
   -h, --help                   Show this help
+  -V, --version                Show version (Git commit hash)
 ```
 
 ### 5. Example output

@@ -4,6 +4,8 @@ SRC_DIR = src
 SRC_SUBDIR += . al ex source utils
 INCLUDE_DIR += lib src lib/indicators/single_include
 OBJ_DIR = obj
+MXREC_VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION_FILE = $(OBJ_DIR)/version
 
 LIB_DIR = lib
 LIB_SUBDIR += . utf8proc iniparser libb64
@@ -92,10 +94,18 @@ $(TARGET) : $(OBJS) $(LIBS) $(NCM_STAMP)
 	$(LD) -o $@ $^ $(LD_FLAGS) $(LD_LIBS)
 	@echo "Link finished\n"
 
+# Refresh the version only when it changes, including after a new commit.
+$(VERSION_FILE): FORCE
+	@mkdir -p $(@D)
+	@printf '%s\n' '$(MXREC_VERSION)' | cmp -s - $@ || printf '%s\n' '$(MXREC_VERSION)' > $@
+
+$(filter %/main.o,$(OBJS)): $(VERSION_FILE)
+$(filter %/main.o,$(OBJS)): CPPFLAGS += -DMXREC_VERSION='"$(MXREC_VERSION)"'
+
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(LIBS)
 	@mkdir -p $(dir $@)
 	@echo "Compiling" $@ "from" $< "..."
-	$(CC) -MMD -MP -c -o $@ $< $(C_FLAGS) $(INCLUDES)
+	$(CC) $(CPPFLAGS) -MMD -MP -c -o $@ $< $(C_FLAGS) $(INCLUDES)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(LIBS)
 	@mkdir -p $(dir $@)
@@ -117,7 +127,9 @@ DEP = $(OBJS:.o=.d)
 
 -include $(DEP)
 
-.PHONY : clean cleanobj test check-dedup check-dedup-memory install uninstall
+.PHONY : clean cleanobj test check-dedup check-dedup-memory install uninstall FORCE
+FORCE:
+
 install: $(TARGET)
 	@command -v $(PATCHELF) >/dev/null 2>&1 || { echo "patchelf is required for install"; exit 1; }
 	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(DATADIR) $(DESTDIR)$(NCMDIR) $(DESTDIR)$(CURLLIBDIR)

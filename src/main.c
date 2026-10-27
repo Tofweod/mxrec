@@ -125,6 +125,7 @@ enum cli_opt_id {
 
 struct option cli_long_opts[] = {{"config", required_argument, 0, 'c'},
 				 {"help", no_argument, 0, 'h'},
+				 {"version", no_argument, 0, 'V'},
 				 {"target", required_argument, 0, 'n'},
 				 {"show-progress", no_argument, 0, 'p'},
 				 {"enable-threads", no_argument, 0, 'T'},
@@ -172,6 +173,7 @@ static void mxrec_usage()
 	printf("  -A, --ncm-auth               Obtain NCM login cookie and exit\n");
 	printf("  -s, --disable-strict         Disable strict mode(default false)\n");
 	printf("  -h, --help                   Show this help\n");
+	printf("  -V, --version                Show version (Git commit hash)\n");
 	printf("\nConfig overrides (--<name>=<value>):\n");
 #define CONFIG_FIELD(type, name, cli, dtor, desc) printf("  --%-35s  (%s)\n", cli, desc);
 	CONFIG_FIELD_LIST
@@ -245,6 +247,7 @@ static int cli_set_field(config_t *opts, int opt_id, const char *val)
 	}
 }
 
+/* Return 0 to run, 1 after informational output, or -1 on an argument error. */
 int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_file, const char **src_names,
 		   size_t *src_count)
 {
@@ -256,7 +259,7 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 
 	opterr = 0;
 
-	while ((opt = getopt_long(argc, argv, "c:S:n:t:spThA", cli_long_opts, &idx)) != -1) {
+	while ((opt = getopt_long(argc, argv, "c:S:n:t:spThAV", cli_long_opts, &idx)) != -1) {
 		switch (opt) {
 		case 'c':
 			*config_file = optarg;
@@ -289,12 +292,15 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 		case 'h':
 			mxrec_usage();
 			return 1;
+		case 'V':
+			printf("%s %s\n", PROG_NAME, MXREC_VERSION);
+			return 1;
 		case '?':
 			fprintf(stderr,
 				"Unknown option: %s\n"
 				"Use --help for a list of options\n",
 				argv[optind - 1]);
-			return 1;
+			return -1;
 		default:
 			if (cli_set_field(opts, opt, optarg)) {
 				fprintf(stderr, "invalid value for --%s: %s\n", cli_long_opts[idx].name, optarg);
@@ -516,8 +522,10 @@ int main(int argc, char **argv)
 
 	globalCurlInit();
 
-	if (cli_parse_opts(argc, argv, &cli_config, &config_file, src_names, &src_count)) {
-		mxrec_cleanup(cleanup, ret, 1);
+	ret = cli_parse_opts(argc, argv, &cli_config, &config_file, src_names, &src_count);
+	if (ret) {
+		configfree(&cli_config);
+		mxrec_cleanup(cleanup, ret, ret < 0 ? 1 : 0);
 	}
 
 	if (!load_config(config_file, &config)) {

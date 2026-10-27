@@ -10,6 +10,10 @@
 
 #define PROG_NAME "mxrec"
 
+#ifndef MXREC_VERSION
+#define MXREC_VERSION "unknown"
+#endif
+
 #define MXREC_SOURCE_LIST                                                                                              \
 	MXREC_SOURCE(lastfmapi)                                                                                        \
 	MXREC_SOURCE(lastfmweb)                                                                                        \
