@@ -190,6 +190,7 @@ FUNCTION_FIELD_LIST
 
 static source __ncm_source = {
 	.name = "ncm",
+	.refill_on_shortage = true,
 	.destroy = ncm_source_destroy,
 	.rsp = ncm_recomm_single,
 	.rmp = ncm_recomm_multi,
@@ -216,6 +217,7 @@ int ncm_source_init(void *sp, config_t *cfg)
 	globalCurlInit();
 	ncm_source *s = (ncm_source *)sp;
 	s->src = __ncm_source;
+	source_init(&s->src, cfg);
 
 	ncm_address_type type = str2addr_type(cfg->ncm_bind_method);
 	const char *address = cfg->ncm_bind_address;
@@ -843,7 +845,6 @@ int ncm_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct ncm_source));
-	source_init(s, cfg);
 	if (ncm_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

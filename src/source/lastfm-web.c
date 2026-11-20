@@ -32,6 +32,7 @@ FUNCTION_FIELD_LIST
 
 static source __lastfmweb_source = {
 	.name = "lastfmweb",
+	.refill_on_shortage = true,
 	.destroy = lastfmweb_source_destroy,
 	.rsp = lastfmweb_recomm_single,
 	.rmp = lastfmweb_recomm_multi,
@@ -59,6 +60,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	globalCurlInit();
 	lastfmweb_source *s = (lastfmweb_source *)sp;
 	s->src = __lastfmweb_source;
+	source_init(&s->src, cfg);
 
 	if (lastfm_security_init(cfg) < 0)
 		return -1;
@@ -83,7 +85,6 @@ extern int lastfmweb_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmweb_source));
-	source_init(s, cfg);
 	if (lastfmweb_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

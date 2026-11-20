@@ -115,6 +115,8 @@ typedef struct source {
 	// general settings
 	uint64_t timeout;
 	uint64_t max_try;
+	/* A successful short recommendation may be followed by another batch. */
+	bool refill_on_shortage;
 } source;
 
 static inline void source_clearuserdata(source *s);

@@ -7,6 +7,7 @@
 #include "playlist-viewer.h"
 #include "playlist.h"
 #include "progress.h"
+#include "source-session.h"
 #include "source.h"
 #include "source/lastfm-api.h"
 #include "source/lastfm-web.h"
@@ -38,10 +39,9 @@ bool disable_strict_mode = false;
 
 struct source_task {
 	source *src;
-	playlist pl;
+	source_session session;
 	int ret;
 	size_t wanted;
-	recomm_option opts;
 	mxrec_error error;
 	bool started;
 	pthread_t thread;
@@ -74,7 +74,7 @@ struct source_task tasks[MXREC_SOURCE_COUNT] = {0};
 static void *source_task_run(void *arg)
 {
 	struct source_task *t = arg;
-	t->ret = source_fetch_batch(t->src, t->wanted, &t->pl, t->opts);
+	t->ret = source_session_fill(&t->session, t->wanted);
 	pthread_mutex_lock(&task_bus.lock);
 	MXREC_BITSET(task_bus.mask, t->idx);
 	pthread_cond_signal(&task_bus.cond);
@@ -99,7 +99,7 @@ static void source_task_spawn(struct source_task *task, size_t idx, bool enable_
 			pthread_mutex_unlock(&task_bus.lock);
 		}
 	} else {
-		task->ret = source_fetch_batch(task->src, task->wanted, &task->pl, task->opts);
+		task->ret = source_session_fill(&task->session, task->wanted);
 	}
 }
 
@@ -538,10 +538,7 @@ int main(int argc, char **argv)
 	const char *src_names[MXREC_SOURCE_COUNT];
 	recomm_option opts;
 	progress *prog = NULL;
-	source_result *results = NULL;
 	source_result **result_ptrs = NULL;
-	uint64_t *attempts = NULL;
-	bool *api_done = NULL;
 	merge_state merge = {0};
 	bool merge_ready = false;
 	struct merge_params *params = NULL;
@@ -620,32 +617,28 @@ int main(int argc, char **argv)
 		tasks[i] = (struct source_task){
 			.src = sources[i],
 			.wanted = target,
-			.opts = opts,
 		};
-		tasks[i].opts.error = &tasks[i].error;
+		source_session_init(&tasks[i].session, sources[i], opts);
 		source_task_spawn(&tasks[i], i, enable_threads);
 	}
 
 	source_task_collect_all(tasks, enable_threads);
 	task_bus_destroy();
 
-	results = xcalloc(source_count, sizeof(*results));
 	result_ptrs = xcalloc(source_count, sizeof(*result_ptrs));
-	attempts = xcalloc(source_count, sizeof(*attempts));
-	api_done = xcalloc(source_count, sizeof(*api_done));
+	bool task_failed = false;
 	for (i = 0; i < source_count; i++) {
-		result_ptrs[i] = &results[i];
-		attempts[i] = target ? 1 : 0;
-		api_done[i] = strcmp(source_names[i], "lastfmapi") == 0 && tasks[i].ret >= 0;
-		bool partial = tasks[i].ret < 0 && tasks[i].pl != NULL;
-		int append_status = source_result_append_error(&results[i], tasks[i].pl, opts.strict, &tasks[i].error);
-		tasks[i].pl = NULL;
-		mxrec_error_print(stderr, &tasks[i].error, source_names[i], 1, config.max_try,
-				  append_status < 0 ? -1 : tasks[i].ret, partial && append_status >= 0);
-		if (append_status < 0)
-			mxrec_cleanup(cleanup, ret, 1);
-		tasks[i].pl = NULL;
+		result_ptrs[i] = &tasks[i].session.result;
+		source_session_print_errors(&tasks[i].session, stderr);
+		/* Worker creation failures have no fetch attempt of their own. */
+		mxrec_error_print(stderr, &tasks[i].error, source_names[i], 0, sources[i]->max_try, tasks[i].ret,
+				  false);
+		if (tasks[i].ret < 0)
+			task_failed = true;
 	}
+	if (task_failed)
+		mxrec_cleanup(cleanup, ret, 1);
+
 	da_init(out, sizeof(*out));
 	params = merge_params_build(config.merge, config.sample, source_names, source_count);
 	if (!params) {
@@ -666,25 +659,20 @@ int main(int argc, char **argv)
 			break;
 		bool tried = false;
 		for (i = 0; i < source_count; i++) {
-			if (api_done[i] || attempts[i] >= config.max_try)
+			source_session *session = &tasks[i].session;
+			if (!source_session_can_refill(session))
 				continue;
-			tried = true;
-			attempts[i]++;
-			playlist batch = NULL;
-			size_t request_count = !strcmp(source_names[i], "lastfmapi") ? target : target - da_len(out);
-			mxrec_error_clear(&tasks[i].error);
-			recomm_option attempt_opts = opts;
-			attempt_opts.error = &tasks[i].error;
-			int status = source_fetch_batch(sources[i], request_count, &batch, attempt_opts);
-			bool partial = status < 0 && batch != NULL;
-			int append_status =
-				source_result_append_error(&results[i], batch, opts.strict, &tasks[i].error);
-			mxrec_error_print(stderr, &tasks[i].error, source_names[i], attempts[i], config.max_try,
-					  append_status < 0 ? -1 : status, partial && append_status >= 0);
-			if (append_status < 0)
+			size_t gap = target - da_len(out);
+			if (session->result.viewer.len > INT_MAX - gap) {
+				error("source candidate count exceeds supported range");
 				mxrec_cleanup(cleanup, ret, 1);
-			if (!strcmp(source_names[i], "lastfmapi") && status >= 0)
-				api_done[i] = true;
+			}
+			tried = true;
+			/* Preserve the same source budget and its existing viewer. */
+			int status = source_session_fill(session, session->result.viewer.len + gap);
+			source_session_print_errors(session, stderr);
+			if (status < 0)
+				mxrec_cleanup(cleanup, ret, 1);
 		}
 		if (!tried)
 			break;
@@ -692,10 +680,14 @@ int main(int argc, char **argv)
 	merged_len = da_len(out);
 	if (merged_len < target) {
 		fprintf(stderr, "recommendations incomplete: requested %zu, got %zu\n", target, merged_len);
-		for (i = 0; i < source_count; i++)
-			fprintf(stderr, "source %s: %zu unique candidates, %llu attempts%s\n", source_names[i],
-				results[i].viewer.len, (unsigned long long)attempts[i],
-				api_done[i] ? ", completed" : ", attempts exhausted");
+		for (i = 0; i < source_count; i++) {
+			source_session *session = &tasks[i].session;
+			bool completed = (!sources[i]->refill_on_shortage && session->succeeded) ||
+					 session->result.viewer.len >= target;
+			fprintf(stderr, "source %s: %zu unique candidates, %llu attempts, %s\n", source_names[i],
+				session->result.viewer.len, (unsigned long long)session->attempts,
+				completed ? "completed" : "attempts exhausted");
+		}
 	}
 	ret = 0;
 
@@ -713,19 +705,9 @@ cleanup:
 	if (params)
 		merge_params_free(params, config.merge);
 	playlist_borrowed_free(out);
-	for (i = 0; i < source_count; i++) {
-		if (tasks[i].pl) {
-			playlist_free(tasks[i].pl);
-		}
-	}
-	if (results) {
-		for (i = 0; i < source_count; i++)
-			source_result_free(&results[i]);
-	}
-	xfree(results);
+	for (i = 0; i < source_count; i++)
+		source_session_free(&tasks[i].session);
 	xfree(result_ptrs);
-	xfree(attempts);
-	xfree(api_done);
 	if (prog) {
 		for (i = 0; i < source_count; i++) {
 			if (sources[i]->update_entry) {

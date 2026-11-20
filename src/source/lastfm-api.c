@@ -587,6 +587,7 @@ cleanup:
 
 static source __lastfmapi_source = {
 	.name = "lastfmapi",
+	.refill_on_shortage = false,
 	.destroy = lastfmapi_source_destroy,
 	.rsp = lastfmapi_recomm_single,
 	.rmp = lastfmapi_recomm_multi,
@@ -758,6 +759,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	globalCurlInit();
 	lastfmapi_source *s = (lastfmapi_source *)sp;
 	s->src = __lastfmapi_source;
+	source_init(&s->src, cfg);
 
 	if (lastfm_security_init(cfg) < 0)
 		return -1;
@@ -780,7 +782,6 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 	assert(cfg);
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmapi_source));
-	source_init(s, cfg);
 	if (lastfmapi_source_init(s, cfg) < 0) {
 		xfree(s);
 		return -1;

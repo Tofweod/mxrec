@@ -306,18 +306,26 @@ that still have candidates.
 
 ### Song deduplication
 
-Each source can contribute multiple batches. Batches are deduplicated within the
-source and the merge continues past duplicates. If the merged result is short,
-additional batches are requested up to `[general] max-try` total attempts per
-source, including the first attempt. Both failed requests and successful but
-insufficient batches consume an attempt. Last.fm API is retried only on failure,
-not merely because its diffusion produced too few candidates. Partial results
-are retained. A zero max-try is invalid. If sources cannot fill the target,
-the available result is printed and the shortfall is reported on stderr. Each failed or partially failed source attempt reports a bounded,
-source-specific chain of errors on stderr; concurrently fetched sources are
-reported as separate blocks after collection. Attempts with no diagnostic frames
-produce no error block. Error output excludes request URLs, credentials and raw
-server responses. JSON playlist output remains on stdout.
+Each source independently retries failed fetches until one succeeds or its
+`[general] max-try` total attempts are exhausted, including the first attempt.
+NCM and Last.fm Web also append successful batches until their own deduplicated
+candidate count reaches the target or the same budget runs out. Last.fm API
+stops after its first successful diffusion, even if it produced fewer candidates.
+Another source filling the final playlist never cancels these failure retries.
+
+Batches are deduplicated within each source and the merge continues past
+duplicates. If the merged result is short, refill-capable sources can contribute
+more batches using only their remaining attempts. Failed requests, source-local
+shortage refill and merge refill all share one counter per source; it is never
+reset between phases. Partial results are retained, including from failed
+attempts. A zero max-try is invalid. If sources cannot fill the target, the
+available result is printed and the shortfall is reported on stderr.
+
+Each failed or partially failed source attempt reports a bounded, source-specific
+chain of errors on stderr. Workers retain each attempt's diagnostics until the
+main thread prints them as separate blocks after collection. Attempts with no
+diagnostic frames produce no error block. Error output excludes request URLs,
+credentials and raw server responses. JSON playlist output remains on stdout.
 Uniqueness applies within each returned playlist; separate runs can recommend
 the same songs again.
 
