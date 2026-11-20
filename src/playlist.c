@@ -106,6 +106,12 @@ void playlist_free(playlist pl)
 	da_free(pl);
 }
 
+void playlist_borrowed_free(playlist pl)
+{
+	if (pl)
+		da_free(pl);
+}
+
 int playlist_unique_owned(playlist *pl, size_t limit, bool strict)
 {
 	track_key_set seen = {0};

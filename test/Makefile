@@ -1,5 +1,5 @@
 DEDUP_TEST_NAMES = track-key-test playlist-unique-test source-unique-test sample-test merge-test \
-	lastfm-api-unique-test ncm-unique-test
+	lastfm-api-unique-test ncm-unique-test viewer-test
 TARGETS = $(filter-out $(DEDUP_TEST_NAMES),$(patsubst %.c, %, $(wildcard *.c)))
 
 ROOT_SRC = ../src
@@ -82,7 +82,7 @@ DEDUP_CFLAGS ?= -g3 -Wall
 DEDUP_EXTRA_SOURCES ?=
 DEDUP_LDFLAGS ?=
 DEDUP_SOURCES = $(addprefix $(ROOT_SRC)/, assert.c xmalloc.c u8string.c artist.c track.c playlist.c \
-	utils/file.c utils/normalize.c track-key.c random.c sample.c al.c) $(wildcard $(ROOT_SRC)/al/*.c) $(DEDUP_EXTRA_SOURCES)
+	utils/file.c utils/normalize.c track-key.c random.c sample.c playlist-viewer.c al.c) $(wildcard $(ROOT_SRC)/al/*.c) $(DEDUP_EXTRA_SOURCES)
 DEDUP_HEADERS = $(wildcard $(ROOT_SRC)/*.h $(ROOT_SRC)/utils/*.h $(ROOT_SRC)/al/*.h) dedup-helpers.h
 DEDUP_BINS = $(addprefix $(DEDUP_TEST_DIR)/,$(DEDUP_TEST_NAMES))
 SOURCE_UNIQUE_BINS = $(addprefix $(DEDUP_TEST_DIR)/,lastfm-api-unique-test ncm-unique-test)

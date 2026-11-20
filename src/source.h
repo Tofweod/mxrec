@@ -165,6 +165,15 @@ static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option
 	return ret;
 }
 
+/* One raw batch. The caller owns any returned partial playlist, even on failure. */
+static inline int source_fetch_batch(source *s, size_t num, playlist *p, recomm_option opts)
+{
+	if (!s || !s->rmp || !p || num > INT_MAX)
+		return -1;
+	*p = NULL;
+	return num ? s->rmp(s, num, p, opts) : 0;
+}
+
 static inline void source_free(source *s)
 {
 	s->destroy(s);

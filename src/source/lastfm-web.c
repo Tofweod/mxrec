@@ -591,7 +591,7 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	if (http_code != 200)
 		mxrec_cleanup(cleanup, ret, -1);
 
-	if ((ret = lastfmweb_jsonbuf2playlist(&buf, num, p, opts.strict, &jerr, s, opts.progress_bar)) < 0) {
+	if ((ret = lastfmweb_jsonbuf2playlist(&buf, SIZE_MAX, p, opts.strict, &jerr, s, opts.progress_bar)) < 0) {
 		print_jsonerr(&jerr);
 		mxrec_cleanup(cleanup, ret, -1);
 	}

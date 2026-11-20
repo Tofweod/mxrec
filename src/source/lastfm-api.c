@@ -606,6 +606,7 @@ struct lastfmapi_source {
 	char *period;
 
 	lastfmapi_diffusion_strategy strategy;
+	bool request_failed;
 };
 
 LASTFMAPI_DECL
@@ -744,6 +745,8 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 err:
 	lastfmapi_curl_error(stderr, http_code, buf);
 cleanup:
+	if (ret < 0)
+		ls->request_failed = true;
 	xfree(url);
 	return ret;
 }
@@ -876,7 +879,7 @@ cleanup_child:
 #endif
 
 	assert(diff_num == da_len(res));
-	ret = lastfmapi_select_unique(res, da_len(res), target, p_ref, opts.strict);
+	ret = lastfmapi_select_unique(res, da_len(res), da_len(res), p_ref, opts.strict);
 cleanup:
 	for (i = 0; i < da_len(res); ++i) {
 		la_track_free(res[i]);
@@ -1427,6 +1430,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	}
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
+	ls->request_failed = false;
 
 	time_t now = mxrec_now();
 	if (now == (time_t)-1)
@@ -1448,7 +1452,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	if ((ret = lastfmapi_curl(&buf, ls, opts.progress_bar, LASTFMAPI_USER_GETRECENTTRACKS, 4,
 				  MAKE_KV("username", (char *)ls->username), MAKE_KV("api_key", ls->key),
-				  MAKE_KV("from", from_s), MAKE_KV("format", LASTFMAPI_FORMAT)) < 0))
+				  MAKE_KV("from", from_s), MAKE_KV("format", LASTFMAPI_FORMAT))) < 0)
 		mxrec_cleanup(cleanup, ret, ret);
 
 	// recent tracks map
@@ -1459,6 +1463,10 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	curlbuf_clear(&buf);
 
 	ret = lastfmapi_diffusion_recomm(ls, opts, la_tr_map, p, period, num);
+	if (ret >= 0 && ls->request_failed) {
+		error("Last.fm API diffusion had failed requests; returning partial results");
+		ret = -1;
+	}
 
 cleanup:
 	la_track_map_cleanup(la_tr_map);

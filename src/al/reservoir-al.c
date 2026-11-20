@@ -8,26 +8,30 @@
 int reservoir_merge_sources(merge_state *state, struct merge_params *params)
 {
 	(void)params;
-	track_key_set seen = {0};
-	size_t visited = 0;
+	track_key_set *seen = &state->reservoir_seen;
+	size_t *visited = &state->reservoir_visited;
 	int ret = -1;
 	if (!state->wanted)
 		return 0;
 	for (size_t i = 0; i < state->source_count; i++) {
 		merge_source_state *source = &state->sources[i];
-		for (size_t j = 0; j < source->len; j++) {
+		for (size_t j = source->reservoir_cursor; j < source->len; j++) {
 			merge_candidate *candidate = &source->items[j];
-			/* Remember every unique song, including displaced reservoir entries. */
-			if (!track_key_set_add(&seen, &candidate->key))
+			source->reservoir_cursor = j + 1;
+			if (state->accept && !state->accept(candidate->item, state->accept_context))
 				continue;
-			visited++;
+			/* Remember every unique song, including displaced reservoir entries. */
+			if (!track_key_set_add(seen, &candidate->key))
+				continue;
+			source->reservoir_cursor = j + 1;
+			(*visited)++;
 			if (da_len(*state->result) < state->wanted) {
 				da_append(*state->result, *candidate->item);
 			} else {
 				double value;
 				if (uniform01(&value) < 0)
 					goto cleanup;
-				size_t index = (size_t)(value * visited);
+				size_t index = (size_t)(value * (*visited));
 				if (index < state->wanted)
 					(*state->result)[index] = *candidate->item;
 			}
@@ -35,6 +39,5 @@ int reservoir_merge_sources(merge_state *state, struct merge_params *params)
 	}
 	ret = (int)da_len(*state->result);
 cleanup:
-	track_key_set_free(&seen);
 	return ret;
 }

@@ -28,6 +28,8 @@ void playitem_free(playitem *pi);
 
 void dumpPlaylist(const playlist pl);
 void playlist_free(playlist pl);
+/* Frees only the array; items remain owned by their source results. */
+void playlist_borrowed_free(playlist pl);
 
 /* Stable deduplication of an owning source playlist. Removed items are freed.
  * On strict validation failure the list is unchanged. Returns its new length. */

@@ -306,10 +306,14 @@ that still have candidates.
 
 ### Song deduplication
 
-Each source returns at most its requested number of unique songs. Deduplication
-can reduce that number; it does not trigger extra network requests. The final
-merge continues past duplicates and exhausted sources to return
-`min(requested count, eligible unique songs available)`.
+Each source can contribute multiple batches. Batches are deduplicated within the
+source and the merge continues past duplicates. If the merged result is short,
+additional batches are requested up to `[general] max-try` total attempts per
+source, including the first attempt. Both failed requests and successful but
+insufficient batches consume an attempt. Last.fm API is retried only on failure,
+not merely because its diffusion produced too few candidates. Partial results
+are retained. A zero max-try is invalid. If sources cannot fill the target,
+the available result is printed and the shortfall is reported on stderr.
 Uniqueness applies within each returned playlist; separate runs can recommend
 the same songs again.
 
@@ -348,9 +352,11 @@ in source order. Source shares are preferences: filling the requested count take
 priority when duplicates or exhausted sources prevent those shares from being met.
 
 For quota, priority, and round-robin strategies, `head` consumes candidates in
-order; `random` shuffles candidate indices once and consumes them without replacement.
-Source arrays are not rearranged. Reservoir uses its own random selection rather
-than the `head`/`random` candidate cursor, and remembers previously displaced songs
+order; `random` selects from each source's unvisited candidates without replacement.
+New batches are appended to the unvisited pool; already selected songs remain in
+the result. Consequently, early and late batches are not globally uniform. Source
+arrays are not rearranged. Reservoir uses its own random selection rather than
+the `head`/`random` candidate cursor, and remembers previously displaced songs
 so that later duplicates cannot enter the sample again.
 
 Missing, invalid UTF-8, or normalized-empty titles/artist names are rejected in

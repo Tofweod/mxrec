@@ -1,8 +1,10 @@
+#include "al/merge-state.h"
 #include "comm.h"
 #include "da.h"
 #include "dump.h"
 #include "monotonic.h"
 #include "mxrec.h"
+#include "playlist-viewer.h"
 #include "playlist.h"
 #include "progress.h"
 #include "source.h"
@@ -70,7 +72,7 @@ struct source_task tasks[MXREC_SOURCE_COUNT] = {0};
 static void *source_task_run(void *arg)
 {
 	struct source_task *t = arg;
-	t->ret = _recomm_multi(t->src, t->wanted, &t->pl, t->opts);
+	t->ret = source_fetch_batch(t->src, t->wanted, &t->pl, t->opts);
 	pthread_mutex_lock(&task_bus.lock);
 	MXREC_BITSET(task_bus.mask, t->idx);
 	pthread_cond_signal(&task_bus.cond);
@@ -85,7 +87,7 @@ static void source_task_spawn(struct source_task *task, size_t idx, bool enable_
 	if (enable_threads) {
 		pthread_create(&task->thread, NULL, source_task_run, task);
 	} else {
-		task->ret = _recomm_multi(task->src, task->wanted, &task->pl, task->opts);
+		task->ret = source_fetch_batch(task->src, task->wanted, &task->pl, task->opts);
 	}
 }
 
@@ -517,7 +519,13 @@ int main(int argc, char **argv)
 	const char *src_names[MXREC_SOURCE_COUNT];
 	recomm_option opts;
 	progress *prog = NULL;
-	playlist *source_pls = NULL;
+	source_result *results = NULL;
+	source_result **result_ptrs = NULL;
+	uint64_t *attempts = NULL;
+	bool *api_done = NULL;
+	merge_state merge = {0};
+	bool merge_ready = false;
+	struct merge_params *params = NULL;
 	playlist out = NULL;
 
 	globalCurlInit();
@@ -534,6 +542,10 @@ int main(int argc, char **argv)
 
 	config_overwrite(&config, &cli_config);
 	configfree(&cli_config);
+	if (!config.max_try) {
+		error("general:max-try must be positive");
+		mxrec_cleanup(cleanup, ret, 1);
+	}
 
 	if (ncm_auth) {
 		source *auth_src = NULL;
@@ -595,43 +607,101 @@ int main(int argc, char **argv)
 	source_task_collect_all(tasks, enable_threads);
 	task_bus_destroy();
 
-	// tasks keep owning their playlists; source_pls is only a view for merge_sources.
-	source_pls = xmalloc(source_count * sizeof(*source_pls));
+	results = xcalloc(source_count, sizeof(*results));
+	result_ptrs = xcalloc(source_count, sizeof(*result_ptrs));
+	attempts = xcalloc(source_count, sizeof(*attempts));
+	api_done = xcalloc(source_count, sizeof(*api_done));
 	for (i = 0; i < source_count; i++) {
-		source_pls[i] = tasks[i].ret > 0 ? tasks[i].pl : NULL;
+		result_ptrs[i] = &results[i];
+		attempts[i] = target ? 1 : 0;
+		api_done[i] = strcmp(source_names[i], "lastfmapi") == 0 && tasks[i].ret >= 0;
+		if (tasks[i].ret < 0)
+			fprintf(stderr, "source %s: attempt failed%s\n", source_names[i],
+				tasks[i].pl ? " (partial results retained)" : "");
+		if (source_result_append(&results[i], tasks[i].pl, opts.strict) < 0) {
+			tasks[i].pl = NULL;
+			error("invalid source batch");
+			mxrec_cleanup(cleanup, ret, 1);
+		}
+		tasks[i].pl = NULL;
 	}
-
 	da_init(out, sizeof(*out));
-	struct merge_params *params = merge_params_build(config.merge, config.sample, source_names, source_count);
+	params = merge_params_build(config.merge, config.sample, source_names, source_count);
 	if (!params) {
-		error("invalid merge/sample configuration: merge=%s sample=%s", config.merge ? config.merge : "(null)",
-		      config.sample ? config.sample : "(null)");
+		error("invalid merge/sample configuration");
 		mxrec_cleanup(cleanup, ret, 1);
 	}
-
-	ret = merge_sources(&out, target, source_pls, source_count, params);
-	merge_params_free(params, config.merge);
-	params = NULL;
-
-	if (ret < 0) {
-		error("failed to merge source recommendations");
+	merge_ready = true;
+	if (merge_state_init_viewers(&merge, &out, target, result_ptrs, source_count, params->sample) < 0) {
+		error("failed to initialize merge");
 		mxrec_cleanup(cleanup, ret, 1);
 	}
-	merged_len = (size_t)ret;
+	for (;;) {
+		if (merge_state_refresh(&merge) < 0 || params->merge_source(&merge, params) < 0) {
+			error("failed to merge source recommendations");
+			mxrec_cleanup(cleanup, ret, 1);
+		}
+		if (da_len(out) >= target)
+			break;
+		bool tried = false;
+		for (i = 0; i < source_count; i++) {
+			if (api_done[i] || attempts[i] >= config.max_try)
+				continue;
+			tried = true;
+			attempts[i]++;
+			playlist batch = NULL;
+			size_t request_count = !strcmp(source_names[i], "lastfmapi") ? target : target - da_len(out);
+			int status = source_fetch_batch(sources[i], request_count, &batch, opts);
+			if (status < 0)
+				fprintf(stderr, "source %s: attempt %llu failed%s\n", source_names[i],
+					(unsigned long long)attempts[i], batch ? " (partial results retained)" : "");
+			if (source_result_append(&results[i], batch, opts.strict) < 0) {
+				error("invalid source batch");
+				mxrec_cleanup(cleanup, ret, 1);
+			}
+			if (!strcmp(source_names[i], "lastfmapi") && status >= 0)
+				api_done[i] = true;
+		}
+		if (!tried)
+			break;
+	}
+	merged_len = da_len(out);
+	if (merged_len < target) {
+		fprintf(stderr, "recommendations incomplete: requested %zu, got %zu\n", target, merged_len);
+		for (i = 0; i < source_count; i++)
+			fprintf(stderr, "source %s: %zu unique candidates, %llu attempts%s\n", source_names[i],
+				results[i].viewer.len, (unsigned long long)attempts[i],
+				api_done[i] ? ", completed" : ", attempts exhausted");
+	}
+	ret = 0;
 
 	fprintf(stdout, "mxrec recommended playlist:\n");
-	dump(merged_len ? out->dh : NULL, stdout, &out, merged_len, str2dumptype(dumptype));
+	if (str2dumptype(dumptype) == DUMP2JSON) {
+		if (merged_len)
+			out->dh->listdump2json(stdout, merged_len, &out);
+		else
+			fputs("{\"playlist\":[]}", stdout);
+	}
 
 cleanup:
-	if (out) {
-		da_free(out);
-	}
+	if (merge_ready)
+		merge_state_free(&merge);
+	if (params)
+		merge_params_free(params, config.merge);
+	playlist_borrowed_free(out);
 	for (i = 0; i < source_count; i++) {
 		if (tasks[i].pl) {
 			playlist_free(tasks[i].pl);
 		}
 	}
-	xfree(source_pls);
+	if (results) {
+		for (i = 0; i < source_count; i++)
+			source_result_free(&results[i]);
+	}
+	xfree(results);
+	xfree(result_ptrs);
+	xfree(attempts);
+	xfree(api_done);
 	if (prog) {
 		for (i = 0; i < source_count; i++) {
 			if (sources[i]->update_entry) {
