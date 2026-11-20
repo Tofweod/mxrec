@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define CONFIG_FIELD_LIST                                                                                              \
-	CONFIG_FIELD(uint64_t, timeout, "timeout", (void), "request timeout (ms)")                                     \
+	CONFIG_FIELD(uint64_t, timeout, "timeout", (void), "Web/NCM curl request timeout (ms; 0 disables)")            \
 	CONFIG_FIELD(uint64_t, max_try, "max-try", (void), "max total fetch attempts per source (including first)")    \
 	CONFIG_FIELD(char *, sample, "sample", xfree, "final playlist sampling method: head|random")                   \
 	CONFIG_FIELD(char *, merge, "merge", xfree,                                                                    \

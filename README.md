@@ -313,6 +313,11 @@ candidate count reaches the target or the same budget runs out. Last.fm API
 stops after its first successful diffusion, even if it produced fewer candidates.
 Another source filling the final playlist never cancels these failure retries.
 
+`[general] timeout` is the per-request curl timeout in milliseconds for Last.fm
+Web and NCM; zero disables it. A request timeout is a failed attempt and uses the
+same retry budget. Last.fm API ignores this setting and applies no overall curl
+request timeout, so diffusion is not bounded by this configuration value.
+
 Batches are deduplicated within each source and the merge continues past
 duplicates. If the merged result is short, refill-capable sources can contribute
 more batches using only their remaining attempts. Failed requests, source-local

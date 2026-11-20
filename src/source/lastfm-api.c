@@ -695,10 +695,8 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 #endif
 
-	/**
-	 * shorter timeout threshold than the normal one to limit diffusion runtime
-	 */
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout / 5);
+	/* Diffusion requests deliberately ignore general:timeout. */
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 0L);
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfmapi_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
