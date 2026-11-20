@@ -42,6 +42,8 @@ struct source_task {
 	int ret;
 	size_t wanted;
 	recomm_option opts;
+	mxrec_error error;
+	bool started;
 	pthread_t thread;
 	size_t idx;
 	bool collected;
@@ -85,7 +87,17 @@ static void source_task_spawn(struct source_task *task, size_t idx, bool enable_
 	task->idx = idx;
 	task->collected = false;
 	if (enable_threads) {
-		pthread_create(&task->thread, NULL, source_task_run, task);
+		int rc = pthread_create(&task->thread, NULL, source_task_run, task);
+		if (rc == 0)
+			task->started = true;
+		else {
+			task->ret = -1;
+			mxrec_error_add(&task->error, "thread", "failed to create source worker: %s", strerror(rc));
+			pthread_mutex_lock(&task_bus.lock);
+			MXREC_BITSET(task_bus.mask, task->idx);
+			pthread_cond_signal(&task_bus.cond);
+			pthread_mutex_unlock(&task_bus.lock);
+		}
 	} else {
 		task->ret = source_fetch_batch(task->src, task->wanted, &task->pl, task->opts);
 	}
@@ -98,17 +110,19 @@ static void source_task_collect_all(struct source_task *tasks, bool enable_threa
 		remain = task_bus.total;
 		pthread_mutex_lock(&task_bus.lock);
 		while (remain > 0) {
-			pthread_cond_wait(&task_bus.cond, &task_bus.lock);
 			for (i = 0; i < task_bus.total; ++i) {
 				if (MXREC_BITTEST(task_bus.mask, i) && !tasks[i].collected) {
 					tasks[i].collected = true;
 					--remain;
 				}
 			}
+			if (remain > 0)
+				pthread_cond_wait(&task_bus.cond, &task_bus.lock);
 		}
 		pthread_mutex_unlock(&task_bus.lock);
 		for (i = 0; i < task_bus.total; ++i) {
-			pthread_join(tasks[i].thread, NULL);
+			if (tasks[i].started)
+				pthread_join(tasks[i].thread, NULL);
 		}
 	} else {
 		for (i = 0; i < task_bus.total; ++i) {
@@ -315,11 +329,11 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 	return 0;
 }
 
-void sources_build(config_t *cfg, const char **names, size_t count)
+int sources_build(config_t *cfg, const char **names, size_t count)
 {
 	int i, ret;
 	source_count = count;
-	sources = xmalloc(sizeof(*sources) * source_count);
+	sources = xcalloc(source_count, sizeof(*sources));
 
 	for (i = 0; i < count && i < MXREC_SOURCE_COUNT; i++) {
 #define MXREC_SOURCE(name)                                                                                             \
@@ -330,10 +344,12 @@ void sources_build(config_t *cfg, const char **names, size_t count)
 		ret = -1;
 		MXREC_SOURCE_LIST;
 		if (ret < 0) {
-			panic("failed to create source: %s\n", names[i]);
+			error("failed to create source: %s", names[i]);
+			return -1;
 		}
 #undef MXREC_SOURCE
 	}
+	return 0;
 }
 
 static void config_overwrite_uint64_t(void *dest, const void *src)
@@ -415,8 +431,11 @@ static void mxrec_sources_free()
 {
 	size_t i = 0;
 	for (i = 0; i < source_count; ++i) {
-		source_free(sources[i]);
+		if (sources && sources[i])
+			source_free(sources[i]);
 	}
+	xfree(sources);
+	sources = NULL;
 }
 
 enum dumpType str2dumptype(const char *type_str)
@@ -562,11 +581,13 @@ int main(int argc, char **argv)
 
 	if (src_count > 0) {
 		source_names = src_names;
-		sources_build(&config, src_names, src_count);
+		if (sources_build(&config, src_names, src_count) < 0)
+			mxrec_cleanup(cleanup, ret, 1);
 	} else {
 		source_names = default_src_names;
 		default_src_names_build(&config);
-		sources_build(&config, default_src_names, MXREC_SOURCE_COUNT - 1);
+		if (sources_build(&config, default_src_names, MXREC_SOURCE_COUNT - 1) < 0)
+			mxrec_cleanup(cleanup, ret, 1);
 	}
 
 	if (show_progress) {
@@ -601,6 +622,7 @@ int main(int argc, char **argv)
 			.wanted = target,
 			.opts = opts,
 		};
+		tasks[i].opts.error = &tasks[i].error;
 		source_task_spawn(&tasks[i], i, enable_threads);
 	}
 
@@ -615,14 +637,13 @@ int main(int argc, char **argv)
 		result_ptrs[i] = &results[i];
 		attempts[i] = target ? 1 : 0;
 		api_done[i] = strcmp(source_names[i], "lastfmapi") == 0 && tasks[i].ret >= 0;
-		if (tasks[i].ret < 0)
-			fprintf(stderr, "source %s: attempt failed%s\n", source_names[i],
-				tasks[i].pl ? " (partial results retained)" : "");
-		if (source_result_append(&results[i], tasks[i].pl, opts.strict) < 0) {
-			tasks[i].pl = NULL;
-			error("invalid source batch");
+		bool partial = tasks[i].ret < 0 && tasks[i].pl != NULL;
+		int append_status = source_result_append_error(&results[i], tasks[i].pl, opts.strict, &tasks[i].error);
+		tasks[i].pl = NULL;
+		mxrec_error_print(stderr, &tasks[i].error, source_names[i], 1, config.max_try,
+				  append_status < 0 ? -1 : tasks[i].ret, partial && append_status >= 0);
+		if (append_status < 0)
 			mxrec_cleanup(cleanup, ret, 1);
-		}
 		tasks[i].pl = NULL;
 	}
 	da_init(out, sizeof(*out));
@@ -651,14 +672,17 @@ int main(int argc, char **argv)
 			attempts[i]++;
 			playlist batch = NULL;
 			size_t request_count = !strcmp(source_names[i], "lastfmapi") ? target : target - da_len(out);
-			int status = source_fetch_batch(sources[i], request_count, &batch, opts);
-			if (status < 0)
-				fprintf(stderr, "source %s: attempt %llu failed%s\n", source_names[i],
-					(unsigned long long)attempts[i], batch ? " (partial results retained)" : "");
-			if (source_result_append(&results[i], batch, opts.strict) < 0) {
-				error("invalid source batch");
+			mxrec_error_clear(&tasks[i].error);
+			recomm_option attempt_opts = opts;
+			attempt_opts.error = &tasks[i].error;
+			int status = source_fetch_batch(sources[i], request_count, &batch, attempt_opts);
+			bool partial = status < 0 && batch != NULL;
+			int append_status =
+				source_result_append_error(&results[i], batch, opts.strict, &tasks[i].error);
+			mxrec_error_print(stderr, &tasks[i].error, source_names[i], attempts[i], config.max_try,
+					  append_status < 0 ? -1 : status, partial && append_status >= 0);
+			if (append_status < 0)
 				mxrec_cleanup(cleanup, ret, 1);
-			}
 			if (!strcmp(source_names[i], "lastfmapi") && status >= 0)
 				api_done[i] = true;
 		}

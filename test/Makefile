@@ -81,7 +81,7 @@ DEDUP_TEST_DIR ?= .dedup-build
 DEDUP_CFLAGS ?= -g3 -Wall
 DEDUP_EXTRA_SOURCES ?=
 DEDUP_LDFLAGS ?=
-DEDUP_SOURCES = $(addprefix $(ROOT_SRC)/, assert.c xmalloc.c u8string.c artist.c track.c playlist.c \
+DEDUP_SOURCES = $(addprefix $(ROOT_SRC)/, assert.c mxrec-error.c xmalloc.c u8string.c artist.c track.c playlist.c \
 	utils/file.c utils/normalize.c track-key.c random.c sample.c playlist-viewer.c al.c) $(wildcard $(ROOT_SRC)/al/*.c) $(DEDUP_EXTRA_SOURCES)
 DEDUP_HEADERS = $(wildcard $(ROOT_SRC)/*.h $(ROOT_SRC)/utils/*.h $(ROOT_SRC)/al/*.h) dedup-helpers.h
 DEDUP_BINS = $(addprefix $(DEDUP_TEST_DIR)/,$(DEDUP_TEST_NAMES))

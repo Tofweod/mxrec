@@ -230,7 +230,7 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 #define JSON_PARSE_TRACK_ERR -3
 #define JSON_PARSE_URL_ERR -4
 LASTFMWEB_DECL
-artist *lastfmweb_json2artist(yyjson_val *val, bool strict, struct json_err *err)
+artist *lastfmweb_json2artist(yyjson_val *val, bool strict, mxrec_error *err)
 {
 	artist *ar;
 	const char *name;
@@ -252,7 +252,7 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-track *lastfmweb_json2track(yyjson_val *val, bool strict, struct json_err *err)
+track *lastfmweb_json2track(yyjson_val *val, bool strict, mxrec_error *err)
 {
 	track *tr;
 	const char *title, *album;
@@ -308,7 +308,7 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-int lastfmweb_json2playitem(yyjson_val *val, playitem *pi, bool strict, struct json_err *err)
+int lastfmweb_json2playitem(yyjson_val *val, playitem *pi, bool strict, mxrec_error *err)
 {
 	int ret;
 	track *tr;
@@ -345,8 +345,8 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, struct json_err *jerr,
-			       source *s, bool update)
+int lastfmweb_jsonbuf2playlist(curlbuf *buf, size_t wanted, playlist *p_ref, bool strict, mxrec_error *jerr, source *s,
+			       bool update)
 {
 	int ret;
 	size_t i, plen, handled = 0;
@@ -408,7 +408,7 @@ cleanup:
 }
 
 LASTFMWEB_DECL
-int lastfmweb_jsonbuf2playitem(curlbuf *buf, playitem *p, bool strict, struct json_err *jerr)
+int lastfmweb_jsonbuf2playitem(curlbuf *buf, playitem *p, bool strict, mxrec_error *jerr)
 {
 	int ret, pi_ret;
 	yyjson_read_err err;
@@ -455,9 +455,7 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 {
 	int ret;
 	CURLcode code;
-	curlbuf buf;
-	struct json_err jerr;
-	jerr.length = 0;
+	curlbuf buf = {0};
 	long http_code = 0;
 	assert(p);
 	lastfmweb_source *ls = (lastfmweb_source *)s;
@@ -465,8 +463,10 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 	struct curl_slist *h = NULL;
 
 	char *realurl = lastfmweb_parse_url(ls, ls->recomm_path, ls->recomm_parameter);
-	if (realurl == NULL)
+	if (realurl == NULL) {
+		mxrec_error_add(opts.error, "Last.fm Web request", "failed to construct request URL");
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf, ls->recomm_method, realurl, 1,
 				   ls->recomm_accept) < 0)
 		mxrec_cleanup(cleanup, ret, -1);
@@ -485,16 +485,19 @@ int _lastfmweb_recomm_single_simple(source *s, playitem *p, recomm_option opts)
 	}
 
 	if (code != CURLE_OK) {
-		error("lastfm web curl failed: %s", curl_easy_strerror(code));
+		mxrec_error_add(opts.error, "Last.fm Web request", "curl error %d: %s", (int)code,
+				curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-	if (http_code != 200)
+	if (http_code != 200) {
+		mxrec_error_add(opts.error, "Last.fm Web request", "HTTP status %ld", http_code);
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
-	if ((ret = lastfmweb_jsonbuf2playitem(&buf, p, opts.strict, &jerr)) < 0) {
-		print_jsonerr(&jerr);
+	if ((ret = lastfmweb_jsonbuf2playitem(&buf, p, opts.strict, opts.error)) < 0) {
+		mxrec_error_add(opts.error, "Last.fm Web recommendation", "failed to parse response");
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
@@ -547,13 +550,12 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	mxrec_log("Calling lastfm-web recomm_multi\n");
 	int ret;
 	CURLcode code;
-	curlbuf buf;
-	struct json_err jerr;
-	jerr.length = 0;
+	curlbuf buf = {0};
 	long http_code = 0;
 	assert(p);
 	if (opts.level == RECOMM_FULL) {
-		panic("lastfm web source don't support full level recommendation");
+		mxrec_error_add(opts.error, "Last.fm Web recommendation", "full recommendation level is not supported");
+		return -1;
 	}
 	assert(opts.level == RECOMM_SIMPLE);
 	lastfmweb_source *ls = (lastfmweb_source *)s;
@@ -562,8 +564,10 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 
 	// set url
 	char *realurl = lastfmweb_parse_url(ls, ls->recomm_path, ls->recomm_parameter);
-	if (realurl == NULL)
+	if (realurl == NULL) {
+		mxrec_error_add(opts.error, "Last.fm Web request", "failed to construct request URL");
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
 	if (lastfmweb_prepare_curl(s, curl, &h, opts.use_security, &buf, ls->recomm_method, realurl, 1,
 				   ls->recomm_accept) < 0)
@@ -583,16 +587,19 @@ int lastfmweb_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		s->uc(s->update_entry);
 	}
 	if (code != CURLE_OK) {
-		error("lastfm web curl failed: %s", curl_easy_strerror(code));
+		mxrec_error_add(opts.error, "Last.fm Web request", "curl error %d: %s", (int)code,
+				curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-	if (http_code != 200)
+	if (http_code != 200) {
+		mxrec_error_add(opts.error, "Last.fm Web request", "HTTP status %ld", http_code);
 		mxrec_cleanup(cleanup, ret, -1);
+	}
 
-	if ((ret = lastfmweb_jsonbuf2playlist(&buf, SIZE_MAX, p, opts.strict, &jerr, s, opts.progress_bar)) < 0) {
-		print_jsonerr(&jerr);
+	if ((ret = lastfmweb_jsonbuf2playlist(&buf, SIZE_MAX, p, opts.strict, opts.error, s, opts.progress_bar)) < 0) {
+		mxrec_error_add(opts.error, "Last.fm Web recommendation", "failed to parse response");
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -615,8 +622,11 @@ void lastfmweb_security_handle(source *s)
 	// impersonate
 	code = curl_easy_impersonate(curl, lsc->profile, 1L);
 	if (code != CURLE_OK) {
-		error("impersonate failed with profile %s:\'%s\', using curl without security", lsc->profile,
-		      curl_easy_strerror(code));
+		if (s->attempt_error)
+			mxrec_error_add(s->attempt_error, "Last.fm Web security", "impersonation failed: %s",
+					curl_easy_strerror(code));
+		else
+			error("Last.fm Web impersonation failed: %s", curl_easy_strerror(code));
 		curl_easy_reset(curl);
 	}
 }

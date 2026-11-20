@@ -29,7 +29,7 @@ enum mxrec_source_id {
 extern source **sources;
 extern size_t source_count;
 
-void sources_build(config_t *cfg, const char **names, size_t count);
+int sources_build(config_t *cfg, const char **names, size_t count);
 
 #define DUMP_TYPE_STR_SIZE 10UL
 #define DUMP_TYPE_LIST DUMP_TYPE(json, JSON)

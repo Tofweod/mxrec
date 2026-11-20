@@ -295,14 +295,14 @@ void ncm_json_msg_free(ncm_json_msg *msg)
 	if (msg == NULL)
 		return;
 	yyjson_doc_free(msg->doc);
-	if (!msg->success && !msg->code) {
+	if (!msg->success) {
 		xfree(msg->err_msg);
 		return;
 	}
 }
 
 NCM_DECL
-int ncm_curlbuf2json_msg(ncm_json_msg *msg, curlbuf *buf, struct json_err *jerr)
+int ncm_curlbuf2json_msg(ncm_json_msg *msg, curlbuf *buf, mxrec_error *jerr)
 {
 	yyjson_doc *doc;
 	yyjson_read_err err;
@@ -326,7 +326,7 @@ int ncm_curlbuf2json_msg(ncm_json_msg *msg, curlbuf *buf, struct json_err *jerr)
 	msg->success = success;
 	msg->code = code;
 
-	if (!success && !code) {
+	if (!success) {
 		msg->err_msg = xstrdup(yyjson_get_str(yyjson_obj_get(root, "msg")));
 	} else {
 		msg->data = yyjson_obj_get(root, "data");
@@ -335,7 +335,7 @@ int ncm_curlbuf2json_msg(ncm_json_msg *msg, curlbuf *buf, struct json_err *jerr)
 }
 
 NCM_DECL
-char *ncm_curlbuf2key(curlbuf *buf, struct json_err *jerr)
+char *ncm_curlbuf2key(curlbuf *buf, mxrec_error *jerr)
 {
 	yyjson_val *val;
 	char *key;
@@ -343,7 +343,7 @@ char *ncm_curlbuf2key(curlbuf *buf, struct json_err *jerr)
 	if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0)
 		mxrec_cleanup(cleanup, key, 0);
 
-	if (!msg.success && !msg.code) {
+	if (!msg.success) {
 		write_jsonerr(jerr, "failed to create qr key:%s", msg.err_msg);
 		mxrec_cleanup(cleanup, key, 0);
 	}
@@ -358,7 +358,7 @@ cleanup:
 }
 
 NCM_DECL
-char *ncm_curlbuf2qr_create_url(curlbuf *buf, struct json_err *jerr)
+char *ncm_curlbuf2qr_create_url(curlbuf *buf, mxrec_error *jerr)
 {
 	yyjson_val *val;
 	char *url;
@@ -366,7 +366,7 @@ char *ncm_curlbuf2qr_create_url(curlbuf *buf, struct json_err *jerr)
 	if (ncm_curlbuf2json_msg(&msg, buf, jerr) < 0)
 		mxrec_cleanup(cleanup, url, 0);
 
-	if (!msg.success && !msg.code) {
+	if (!msg.success) {
 		write_jsonerr(jerr, "failed to create url of qrcode:%s", msg.err_msg);
 		mxrec_cleanup(cleanup, url, 0);
 	}
@@ -380,7 +380,7 @@ cleanup:
 }
 
 NCM_DECL
-artist *ncm_json2artist(yyjson_val *val, struct json_err *jerr)
+artist *ncm_json2artist(yyjson_val *val, mxrec_error *jerr)
 {
 	artist *ar;
 	size_t i, alia_size;
@@ -403,7 +403,7 @@ artist *ncm_json2artist(yyjson_val *val, struct json_err *jerr)
 }
 
 NCM_DECL
-void ncm_json2playitem(yyjson_val *val, playitem *pi, struct json_err *jerr)
+void ncm_json2playitem(yyjson_val *val, playitem *pi, mxrec_error *jerr)
 {
 	track *tr;
 	const char *name, *album;
@@ -437,7 +437,7 @@ void ncm_json2playitem(yyjson_val *val, playitem *pi, struct json_err *jerr)
 }
 
 NCM_DECL
-int ncm_curlbuf2playlist(source *s, curlbuf *buf, playlist *pl_ref, struct json_err *jerr, bool update)
+int ncm_curlbuf2playlist(source *s, curlbuf *buf, playlist *pl_ref, mxrec_error *jerr, bool update)
 {
 	int ret;
 	ncm_json_msg msg = {0};
@@ -450,14 +450,15 @@ int ncm_curlbuf2playlist(source *s, curlbuf *buf, playlist *pl_ref, struct json_
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
-	if (!msg.success && !msg.code) {
-		write_jsonerr(jerr, "%s", msg.err_msg);
+	if (!msg.success) {
+		write_jsonerr(jerr, "NCM service returned error code %d", msg.code);
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	// data.body.data.dailySongs
 	songs = YYJSON_GET(msg.data, "body", "data", "dailySongs");
 	if (!yyjson_is_arr(songs)) {
+		write_jsonerr(jerr, "NCM response field data.body.data.dailySongs is missing or not an array");
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -557,7 +558,7 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 	va_end(paras);
 	para_str = yyjson_mut_write(doc, 0, &para_str_len);
 	if (para_str == NULL) {
-		error("failed to write json in ncm curl");
+		mxrec_error_add(s->attempt_error, "NCM request", "failed to encode request JSON");
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -579,12 +580,14 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 	}
 
 	if (code != CURLE_OK) {
-		error("ncm curl failed: %s", curl_easy_strerror(code));
+		mxrec_error_add(s->attempt_error, "NCM request", "curl error %d: %s", (int)code,
+				curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
 	if (http_code != 200) {
+		mxrec_error_add(s->attempt_error, "NCM request", "HTTP status %ld", http_code);
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
@@ -623,8 +626,6 @@ int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 	int ret;
 	ncm_source *ns = (ncm_source *)s;
 	curlbuf buf;
-	struct json_err jerr;
-	jerr.length = 0;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	char *fresh_str = NULL;
 
@@ -634,8 +635,8 @@ int ncm_recomm_multi(source *s, size_t num, playlist *p, recomm_option opts)
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
-	if ((ret = ncm_curlbuf2playlist(s, &buf, p, &jerr, opts.progress_bar)) < 0) {
-		error("failed to extract playlist from ncm json:%s", jerr.msg);
+	if ((ret = ncm_curlbuf2playlist(s, &buf, p, opts.error, opts.progress_bar)) < 0) {
+		mxrec_error_add(opts.error, "NCM recommendation", "failed to parse response");
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 
@@ -670,7 +671,7 @@ bool ncm_check_username(ncm_source *s)
 		mxrec_cleanup(cleanup, ret, false);
 	}
 
-	if (!msg.success && !msg.code) {
+	if (!msg.success) {
 		error("failed to check ncm username:%s", msg.err_msg);
 		mxrec_cleanup(cleanup, ret, false);
 	}
@@ -718,7 +719,7 @@ bool ncm_config_check(source *s)
 }
 
 NCM_DECL
-int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char *key, int timeout, int interval,
+int ncm_qr_check(ncm_source *s, curlbuf *buf, mxrec_error *jerr, const char *key, int timeout, int interval,
 		 char **cookie_ref)
 {
 	ncm_json_msg msg = {0};
@@ -738,8 +739,8 @@ int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char 
 			mxrec_cleanup(end, ret, -2);
 		}
 		curlbuf_clear(buf);
-		if (!msg.success && !msg.code) {
-			error("ncm failed to check qr code:%s", msg.err_msg);
+		if (!msg.success) {
+			write_jsonerr(jerr, "NCM QR status returned error code %d", msg.code);
 			mxrec_cleanup(end, ret, -2);
 		}
 
@@ -752,11 +753,11 @@ int ncm_qr_check(ncm_source *s, curlbuf *buf, struct json_err *jerr, const char 
 #endif
 		switch (code) {
 		case 500: {
-			write_jsonerr("failed to login:%s", "need \"nocookie\" parameter");
+			write_jsonerr(jerr, "failed to login: need nocookie parameter");
 			mxrec_cleanup(end, ret, -2);
 		}
 		case 800: {
-			write_jsonerr("failed to login:%s", "qrcode has been expired");
+			write_jsonerr(jerr, "failed to login: qrcode has been expired");
 			mxrec_cleanup(end, ret, -1);
 		}
 		case 801:
@@ -790,10 +791,10 @@ end:
 NCM_DECL
 void ncm_get_cookie_by_qr(ncm_source *s)
 {
-	int ret;
+	int ret = -1;
 	char *key = NULL, *url = NULL, *cookie = NULL;
-	struct json_err jerr;
-	jerr.length = 0;
+	mxrec_error jerr = {0};
+	s->src.attempt_error = &jerr;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	if ((ret = ncm_curl(&s->src, &buf, false, LOGIN_QR_KEY)) < 0) {
@@ -824,10 +825,12 @@ void ncm_get_cookie_by_qr(ncm_source *s)
 		printf("[INFO]: cookie of NCM is:\n%s\n", cookie);
 	else if (ret == -1)
 		printf("[INFO]: NCM QR Code has been expired, please generate again.\n");
-	else
-		error("NCM failed to get cookie from QRCode");
+	else if (jerr.count == 0)
+		mxrec_error_add(&jerr, "NCM login", "failed to obtain cookie from QR code");
 
 cleanup:
+	mxrec_error_print(stderr, &jerr, "ncm-login", 1, 1, ret, false);
+	s->src.attempt_error = NULL;
 	xfree(key);
 	xfree(url);
 	xfree(cookie);

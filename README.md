@@ -313,7 +313,11 @@ source, including the first attempt. Both failed requests and successful but
 insufficient batches consume an attempt. Last.fm API is retried only on failure,
 not merely because its diffusion produced too few candidates. Partial results
 are retained. A zero max-try is invalid. If sources cannot fill the target,
-the available result is printed and the shortfall is reported on stderr.
+the available result is printed and the shortfall is reported on stderr. Each failed or partially failed source attempt reports a bounded,
+source-specific chain of errors on stderr; concurrently fetched sources are
+reported as separate blocks after collection. Attempts with no diagnostic frames
+produce no error block. Error output excludes request URLs, credentials and raw
+server responses. JSON playlist output remains on stdout.
 Uniqueness applies within each returned playlist; separate runs can recommend
 the same songs again.
 

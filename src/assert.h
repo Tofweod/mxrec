@@ -6,6 +6,7 @@
 #else
 
 #include "comm.h"
+#include "mxrec-error.h"
 
 #ifndef static_assert
 #define static_assert(expr, msg) extern char __static_assert_failure[(expr) ? 1 : -1]
@@ -17,8 +18,8 @@
 #define mxrec_log(...)
 
 void _Assert(const char *e, const char *file, int line);
-mxrec_noreturn void _Panic(const char *file, int line, const char *msg, ...);
-void _Error(const char *file, int line, const char *msg, ...);
+mxrec_noreturn void _Panic(const char *file, int line, const char *msg, ...) MXREC_PRINTF_FORMAT(3, 4);
+void _Error(const char *file, int line, const char *msg, ...) MXREC_PRINTF_FORMAT(3, 4);
 
 #endif /* !__cplusplus */
 #endif /* TOF_MXREC_ASSERT_H */

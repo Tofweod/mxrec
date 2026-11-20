@@ -493,7 +493,7 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 
 // la_track json parsing
 LASTFMAPI_DECL
-la_track *lastfmapi_json2recent_latrack(yyjson_val *val, bool strict, time_t now, struct json_err *err)
+la_track *lastfmapi_json2recent_latrack(yyjson_val *val, bool strict, time_t now, mxrec_error *err)
 {
 	la_track *ltr;
 	yyjson_val *jname, *jar;
@@ -529,7 +529,7 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-int lastfmapi_jsonbuf2recent_latrack_map(curlbuf *buf, bool strict, la_track **map, struct json_err *jerr)
+int lastfmapi_jsonbuf2recent_latrack_map(curlbuf *buf, bool strict, la_track **map, mxrec_error *jerr)
 {
 	int ret;
 	yyjson_read_err err;
@@ -664,16 +664,6 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-void lastfmapi_curl_error(FILE *fp, long http_code, curlbuf *buf)
-{
-	// TODO
-	switch (http_code) {
-	case 200:
-		return;
-	}
-}
-
-LASTFMAPI_DECL
 int lastfmapi_xfer_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
 {
 	source *s = userdata;
@@ -733,17 +723,28 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 		s->uc(s->update_entry);
 	}
 	if (code != CURLE_OK) {
-		error("lastfm api curl failed: %s", curl_easy_strerror(code));
+		mxrec_error_add(s->attempt_error, method, "curl error %d: %s", (int)code, curl_easy_strerror(code));
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_HTTP_CODE, &http_code);
-	if (http_code != 200)
-		mxrec_cleanup(err, ret, -2);
-
+	if (http_code != 200) {
+		mxrec_error_add(s->attempt_error, method, "HTTP status %ld", http_code);
+		mxrec_cleanup(cleanup, ret, -2);
+	}
+	yyjson_doc *response = yyjson_read(buf->buf, buf->len, 0);
+	if (response) {
+		yyjson_val *root = yyjson_doc_get_root(response);
+		yyjson_val *api_error = yyjson_obj_get(root, "error");
+		if (api_error) {
+			mxrec_error_add(s->attempt_error, method, "Last.fm API error code %d",
+					yyjson_get_int(api_error));
+			yyjson_doc_free(response);
+			mxrec_cleanup(cleanup, ret, -1);
+		}
+		yyjson_doc_free(response);
+	}
 	ret = 0;
-err:
-	lastfmapi_curl_error(stderr, http_code, buf);
 cleanup:
 	if (ret < 0)
 		ls->request_failed = true;
@@ -797,6 +798,12 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 	size_t idx, *idxs = NULL, map_size;
 	size_t src_size;
 	lastfmapi_diffusion_strategy strategy = ls->strategy;
+	if (!map) {
+		playlist empty = NULL;
+		da_init(empty, sizeof(*empty));
+		*p = empty;
+		return 0;
+	}
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "origin hash map size is %u\n", HASH_CNT(hh, map));
 #endif
@@ -827,7 +834,13 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 		src_size = idx;
 	}
 
-	assert(src[0]);
+	if (!src_size) {
+		playlist empty = NULL;
+		da_init(empty, sizeof(*empty));
+		*p = empty;
+		ret = 0;
+		goto cleanup;
+	}
 	ret = _lastfmapi_diffusion_core(src, src_size, strategy, opts.lastfmapi_opts.diffusion, period, target, map, p,
 					ls, opts);
 cleanup:
@@ -981,7 +994,7 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-la_track *lastfmapi_json2similar_latrack(yyjson_val *val, bool strict, struct json_err *jerr)
+la_track *lastfmapi_json2similar_latrack(yyjson_val *val, bool strict, mxrec_error *jerr)
 {
 	la_track *ltr;
 	yyjson_val *jar;
@@ -1020,8 +1033,7 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	yyjson_read_err err;
 	yyjson_doc *doc = NULL;
 	yyjson_val *root, *tracks, *track;
-	struct json_err jerr;
-	jerr.length = 0;
+	mxrec_error *jerr = opts.error;
 	curlbuf buf;
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	char diff_size_s[LONG_STR_SIZE];
@@ -1035,8 +1047,9 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	}
 	doc = yyjson_read_opts(buf.buf, buf.len, 0, NULL, &err);
 	if (doc == NULL) {
-		write_jsonerr(&jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
 			      err.msg, err.code, err.pos);
+		ls->request_failed = true;
 		_res = NULL;
 		mxrec_cleanup(cleanup, track_size, 0);
 	}
@@ -1046,6 +1059,8 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	tracks = yyjson_obj_get(yyjson_obj_get(root, "similartracks"), "track");
 	// track.getsimilar will return 200 OK HTTP status code on error
 	if (!yyjson_is_arr(tracks)) {
+		mxrec_error_add(jerr, "Last.fm API response", "required track array missing or invalid");
+		ls->request_failed = true;
 		_res = NULL;
 		mxrec_cleanup(cleanup, track_size, 0);
 	}
@@ -1058,7 +1073,17 @@ size_t _lastfmapi_get_track_similar(la_track *ltr, unsigned diff_size, la_track 
 	_res = xmalloc(track_size * sizeof(*_res));
 	yyjson_arr_foreach(tracks, i, track_size, track)
 	{
-		_res[i] = lastfmapi_json2similar_latrack(track, opts.strict, &jerr);
+		_res[i] = lastfmapi_json2similar_latrack(track, opts.strict, jerr);
+		if (!_res[i]) {
+			mxrec_error_add(jerr, "track.getSimilar", "track entry %zu is missing a title or artist", i);
+			ls->request_failed = true;
+			for (size_t k = 0; k < i; k++)
+				la_track_free(_res[k]);
+			xfree(_res);
+			_res = NULL;
+			track_size = 0;
+			goto cleanup;
+		}
 		_res[i]->diffusion = ltr->diffusion + 1;
 		_res[i]->parent = ltr;
 	}
@@ -1071,7 +1096,7 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_err *jerr)
+la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, mxrec_error *jerr)
 {
 	la_artist lar = {0};
 	const char *name, *mbid;
@@ -1083,8 +1108,6 @@ la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_e
 		write_jsonerr(jerr, "failed to get field \"name\" of artist");
 
 	mbid = yyjson_get_str(yyjson_obj_get(val, "mbid"));
-	if (mbid == NULL)
-		write_jsonerr(jerr, "failed to get field \"mbid\" of artist");
 
 	match_s = yyjson_get_str(yyjson_obj_get(val, "match"));
 	if (string2d(match_s, MAX_DOUBLE_CHARS, &match) == 0)
@@ -1095,8 +1118,7 @@ la_artist _lastfmapi_json2sim_artist(yyjson_val *val, bool strict, struct json_e
 }
 
 LASTFMAPI_DECL
-size_t _lastfmapi_jsonbuf2sim_artists(curlbuf *buf, unsigned diffusion, bool strict, la_artist **res,
-				      struct json_err *jerr)
+size_t _lastfmapi_jsonbuf2sim_artists(curlbuf *buf, unsigned diffusion, bool strict, la_artist **res, mxrec_error *jerr)
 {
 	size_t i, ar_size;
 	la_artist *_res = NULL;
@@ -1116,6 +1138,7 @@ size_t _lastfmapi_jsonbuf2sim_artists(curlbuf *buf, unsigned diffusion, bool str
 	ars = yyjson_obj_get(yyjson_obj_get(root, "similarartists"), "artist");
 	// artist.getsimilar will return 200 OK HTTP status code on error
 	if (!yyjson_is_arr(ars)) {
+		mxrec_error_add(jerr, "artist.getSimilar", "required artist array missing or invalid");
 		_res = NULL;
 		mxrec_cleanup(cleanup, ar_size, 0);
 	}
@@ -1130,6 +1153,14 @@ size_t _lastfmapi_jsonbuf2sim_artists(curlbuf *buf, unsigned diffusion, bool str
 	yyjson_arr_foreach(ars, i, ar_size, ar)
 	{
 		_res[i] = _lastfmapi_json2sim_artist(ar, strict, jerr);
+		if (!_res[i].name) {
+			for (size_t k = 0; k <= i; k++)
+				la_artist_cleanup(&_res[k]);
+			xfree(_res);
+			_res = NULL;
+			ar_size = 0;
+			goto cleanup;
+		}
 		_res[i].diffusion = diffusion + 1;
 	}
 
@@ -1140,7 +1171,7 @@ cleanup:
 }
 
 LASTFMAPI_DECL
-la_track *_lastfmapi_json2top_track(yyjson_val *val, bool strict, struct json_err *jerr)
+la_track *_lastfmapi_json2top_track(yyjson_val *val, bool strict, mxrec_error *jerr)
 {
 	yyjson_val *ar;
 	la_track *ltr;
@@ -1168,7 +1199,7 @@ cleanup:
 
 LASTFMAPI_DECL
 size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_track *parent, la_track ***res,
-				    lastfmapi_source *ls, recomm_option opts, struct json_err *jerr)
+				    lastfmapi_source *ls, recomm_option opts, mxrec_error *jerr)
 {
 	size_t i, tr_size;
 	la_track **_res = NULL;
@@ -1190,8 +1221,9 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 
 	doc = yyjson_read_opts(buf.buf, buf.len, 0, 0, &err);
 	if (doc == NULL) {
-		write_jsonerr(&jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
+		write_jsonerr(jerr, "[%s]: failed to parse json: %s, code: %u at byte position: %lu\n", JSON_ERR_HEAD,
 			      err.msg, err.code, err.pos);
+		ls->request_failed = true;
 		_res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
@@ -1201,6 +1233,8 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 
 	// artist.gettoptracks will return 200 OK HTTP status code on error
 	if (!yyjson_is_arr(tracks)) {
+		mxrec_error_add(jerr, "Last.fm API response", "required track array missing or invalid");
+		ls->request_failed = true;
 		_res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
@@ -1214,6 +1248,16 @@ size_t _lastfmapi_artist_top_tracks(const la_artist *ar, unsigned diff_size, la_
 	yyjson_arr_foreach(tracks, i, tr_size, tr)
 	{
 		_res[i] = _lastfmapi_json2top_track(tr, opts.strict, jerr);
+		if (!_res[i]) {
+			mxrec_error_add(jerr, "artist.getTopTracks", "track entry %zu is missing a title or artist", i);
+			ls->request_failed = true;
+			for (size_t k = 0; k < i; k++)
+				la_track_free(_res[k]);
+			xfree(_res);
+			_res = NULL;
+			tr_size = 0;
+			goto cleanup;
+		}
 		_res[i]->diffusion = ar->diffusion + 1;
 		_res[i]->match = ar->match;
 		_res[i]->parent = parent;
@@ -1228,8 +1272,7 @@ cleanup:
 
 LASTFMAPI_DECL
 size_t _lastfmapi_all_artists_top_tracks(const la_artist *ars, size_t ar_size, unsigned diff_size, la_track *parent,
-					 la_track ***res, lastfmapi_source *ls, recomm_option opts,
-					 struct json_err *jerr)
+					 la_track ***res, lastfmapi_source *ls, recomm_option opts, mxrec_error *jerr)
 {
 	size_t i, total_size, tr_size;
 	la_track **trs, **total_res = NULL, **_res;
@@ -1281,8 +1324,7 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 	char diff_size_s[LONG_STR_SIZE];
 	diff_size = (unsigned)sqrt(diff_size);
 	ull2string(diff_size_s, LONG_STR_SIZE, diff_size);
-	struct json_err jerr;
-	jerr.length = 0;
+	mxrec_error *jerr = opts.error;
 
 	if (ltr->diffusion >= diffusion - 1) {
 		*res = NULL;
@@ -1298,13 +1340,16 @@ size_t _lastfmapi_diffusion_artist(la_track *ltr, int diffusion, unsigned diff_s
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
 
-	ar_size = _lastfmapi_jsonbuf2sim_artists(&buf, ltr->diffusion, opts.strict, &ars, &jerr);
+	size_t error_count = jerr ? jerr->count + jerr->omitted : 0;
+	ar_size = _lastfmapi_jsonbuf2sim_artists(&buf, ltr->diffusion, opts.strict, &ars, jerr);
+	if (jerr && jerr->count + jerr->omitted > error_count)
+		ls->request_failed = true;
 	if (!ar_size && !ars) {
 		*res = NULL;
 		mxrec_cleanup(cleanup, tr_size, 0);
 	}
 
-	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, ltr, res, ls, opts, &jerr);
+	tr_size = _lastfmapi_all_artists_top_tracks(ars, ar_size, diff_size, ltr, res, ls, opts, jerr);
 
 cleanup:
 	u8sfree(artist);
@@ -1402,7 +1447,8 @@ void lastfmapi_source_destroy(void *sp)
 LASTFMAPI_DECL
 int lastfmapi_recomm_single(source *s, playitem *p, recomm_option opts)
 {
-	panic("lastfm-api do not support single recommendation.");
+	mxrec_error_add(opts.error, "Last.fm API recommendation", "single recommendation is not supported");
+	return -1;
 }
 
 LASTFMAPI_DECL
@@ -1413,12 +1459,11 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	curlbuf buf;
 	la_track *la_tr_map = NULL;
 	time_t period;
-	struct json_err jerr;
-	jerr.length = 0;
+	mxrec_error *jerr = opts.error;
 	char *opt_msg = NULL;
 
 	if (lastfmapi_check_opts(opts, &opt_msg) < 0) {
-		error("recomm_option error setted:%s", opt_msg);
+		mxrec_error_add(opts.error, "Last.fm API configuration", "%s", opt_msg ? opt_msg : "invalid options");
 		xfree(opt_msg);
 		return -1;
 	}
@@ -1426,7 +1471,9 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	assert(p);
 	if (opts.level == RECOMM_FULL) {
-		panic("lastfm api source don't support full level recommendation in recomm_multi");
+		mxrec_error_add(opts.error, "Last.fm API recommendation", "full recommendation level is not supported");
+		ret = -1;
+		goto cleanup;
 	}
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
@@ -1437,7 +1484,7 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		mxrec_cleanup(cleanup, ret, -1);
 	time_t from = string2timestamp(ls->period);
 	if (from < 0 || from >= now) {
-		error("Last.fm API period must select a time before now, e.g. 1week or 2021-01-01");
+		mxrec_error_add(opts.error, "Last.fm API configuration", "period must select a time before now");
 		mxrec_cleanup(cleanup, ret, -1);
 	}
 	// The API uses the start timestamp; scoring uses elapsed seconds.
@@ -1456,15 +1503,15 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 		mxrec_cleanup(cleanup, ret, ret);
 
 	// recent tracks map
-	if ((ret = lastfmapi_jsonbuf2recent_latrack_map(&buf, opts.strict, &la_tr_map, &jerr)) < 0) {
-		print_jsonerr(&jerr);
+	if ((ret = lastfmapi_jsonbuf2recent_latrack_map(&buf, opts.strict, &la_tr_map, jerr)) < 0) {
+		mxrec_error_add(opts.error, "Last.fm API recommendation", "failed to parse recent tracks");
 		mxrec_cleanup(cleanup, ret, ret);
 	}
 	curlbuf_clear(&buf);
 
 	ret = lastfmapi_diffusion_recomm(ls, opts, la_tr_map, p, period, num);
 	if (ret >= 0 && ls->request_failed) {
-		error("Last.fm API diffusion had failed requests; returning partial results");
+		mxrec_error_add(opts.error, "Last.fm API diffusion", "failed requests; partial results retained");
 		ret = -1;
 	}
 
@@ -1484,8 +1531,11 @@ void lastfmapi_security_handle(source *s)
 	// impersonate
 	code = curl_easy_impersonate(curl, lsc->profile, 1L);
 	if (code != CURLE_OK) {
-		error("impersonate failed with profile %s:\'%s\', using curl without security", lsc->profile,
-		      curl_easy_strerror(code));
+		if (s->attempt_error)
+			mxrec_error_add(s->attempt_error, "Last.fm API security", "impersonation failed: %s",
+					curl_easy_strerror(code));
+		else
+			error("Last.fm API impersonation failed: %s", curl_easy_strerror(code));
 		curl_easy_reset(curl);
 	}
 }

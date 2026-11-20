@@ -13,7 +13,7 @@ static const char fixture[] = "{\"success\":true,\"data\":{\"body\":{\"data\":{\
 static int fixture_recomm(source *s, size_t num, playlist *out, recomm_option opts)
 {
 	(void)num;
-	struct json_err err = {0};
+	mxrec_error err = {0};
 	curlbuf buf;
 	curlbuf_init(&buf, sizeof(fixture));
 	curlbuf_append(&buf, fixture, strlen(fixture));
@@ -37,7 +37,7 @@ int main(void)
 	test_unique(out);
 	playlist_free(out);
 
-	struct json_err err = {0};
+	mxrec_error err = {0};
 	curlbuf buf;
 	const char empty[] = "{\"success\":true,\"data\":{\"body\":{\"data\":{\"dailySongs\":[]}}}}";
 	curlbuf_init(&buf, sizeof(empty));

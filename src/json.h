@@ -1,16 +1,8 @@
 #ifndef TOF_MXERC_JSON_H
 #define TOF_MXERC_JSON_H
 
-#define MAX_JSON_ERR_LEN 1024
-
-struct json_err {
-	char msg[MAX_JSON_ERR_LEN];
-	int length;
-};
-
-void write_jsonerr(void *err, const char *fmt, ...);
-
-void print_jsonerr(void *err);
+#include "mxrec-error.h"
+#define write_jsonerr(err, ...) mxrec_error_add((err), "JSON", __VA_ARGS__)
 
 // helper macros
 #define NARG_MAP(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N

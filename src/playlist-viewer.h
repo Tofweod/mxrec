@@ -1,5 +1,6 @@
 #ifndef TOF_MXREC_PLAYLIST_VIEWER_H
 #define TOF_MXREC_PLAYLIST_VIEWER_H
+#include "mxrec-error.h"
 #include "playlist.h"
 #include "sample.h"
 #include "track-key.h"
@@ -26,6 +27,7 @@ typedef struct playlist_iterator {
 } playlist_iterator;
 /* Takes ownership of batch, including on error. */
 int source_result_append(source_result *result, playlist batch, bool strict);
+int source_result_append_error(source_result *result, playlist batch, bool strict, mxrec_error *error);
 void source_result_free(source_result *result);
 void playlist_iterator_init(playlist_iterator *it, const playlist_viewer *viewer, enum sample_method method);
 /* 1 = item, 0 = exhausted, -1 = error. */

@@ -16,6 +16,7 @@
 
 #include "xmalloc.h"
 #include "assert.h"
+#include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -23,7 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define fatalx(msg, ...) panic(msg, #__VA_ARGS__)
+#define fatalx(...) panic(__VA_ARGS__)
 
 void *xmalloc(size_t size)
 {

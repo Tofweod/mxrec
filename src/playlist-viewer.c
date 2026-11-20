@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 
-int source_result_append(source_result *r, playlist batch, bool strict)
+int source_result_append_error(source_result *r, playlist batch, bool strict, mxrec_error *error)
 {
 	if (!batch)
 		return 0;
@@ -16,6 +16,10 @@ int source_result_append(source_result *r, playlist batch, bool strict)
 		for (size_t i = 0; i < n; i++) {
 			track_key key = {0};
 			if (track_key_build(batch[i].tr, &key) < 0) {
+				mxrec_error_add(
+					error, "track identity",
+					"invalid title or artist metadata at batch index %zu (including invalid UTF-8)",
+					i);
 				playlist_free(batch);
 				return -1;
 			}
@@ -43,6 +47,10 @@ int source_result_append(source_result *r, playlist batch, bool strict)
 		r->viewer.unique[r->viewer.len++] = &batch[i];
 	}
 	return 0;
+}
+int source_result_append(source_result *r, playlist batch, bool strict)
+{
+	return source_result_append_error(r, batch, strict, NULL);
 }
 void source_result_free(source_result *r)
 {

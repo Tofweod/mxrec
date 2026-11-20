@@ -2,6 +2,7 @@
 #define TOF_MXREC_SOURCE_H
 
 #include "assert.h"
+#include "mxrec-error.h"
 #include "playlist.h"
 #include "xmalloc.h"
 #include <limits.h>
@@ -33,6 +34,7 @@ typedef struct recomm_option {
 		RECOMM_FULL = 1,
 	} level;
 
+	mxrec_error *error;
 	bool strict;
 	bool use_security;
 	bool progress_bar;
@@ -86,6 +88,7 @@ typedef void (*update_clear)(void *update_entry);
 
 typedef struct source {
 	const char *name;
+	mxrec_error *attempt_error;
 	source_destroy destroy;
 
 	recomm_multi_fp rmp;
@@ -171,7 +174,15 @@ static inline int source_fetch_batch(source *s, size_t num, playlist *p, recomm_
 	if (!s || !s->rmp || !p || num > INT_MAX)
 		return -1;
 	*p = NULL;
-	return num ? s->rmp(s, num, p, opts) : 0;
+	if (!num)
+		return 0;
+	size_t before = opts.error ? opts.error->count : 0;
+	s->attempt_error = opts.error;
+	int ret = s->rmp(s, num, p, opts);
+	s->attempt_error = NULL;
+	if (ret < 0 && opts.error && opts.error->count == before)
+		mxrec_error_add(opts.error, "recommendation", "source returned error %d", ret);
+	return ret;
 }
 
 static inline void source_free(source *s)
