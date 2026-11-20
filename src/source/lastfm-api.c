@@ -498,11 +498,16 @@ LASTFMAPI_DECL
 size_t _lastfmapi_diffusion_artist(la_track *info, int diffusion, unsigned diff, la_track ***res, lastfmapi_source *ls,
 				   recomm_option opts, la_identity_pool *identities);
 
+/* Each seed keeps its own stack/queue between round-robin turns. */
+typedef struct diffusion_seed {
+	df_deque work;
+	bool started;
+} diffusion_seed;
+
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, lastfmapi_diffusion_strategy strategy,
-				  const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts,
-				  size_t cur_idx, size_t total_tracks, diffusion_nodes *nodes,
-				  la_identity_pool *identities);
+void _lastfmapi_diffusion_step(df_deque *work, int diffusion, const la_track *map, la_track ***res,
+			       lastfmapi_source *ls, recomm_option opts, diffusion_nodes *nodes,
+			       la_identity_pool *identities);
 LASTFMAPI_DECL
 int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
@@ -967,160 +972,125 @@ int _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusi
 			      la_identity_pool *identities)
 {
 	source *s = &ls->src;
-	size_t i, child_size, diff_num;
-	la_track *cur, **res, **child;
-	char progress_desc[256];
-	int ret = -1;
-	res = NULL;
+	assert(src_size > 0);
+	diffusion_seed *seeds = xcalloc(src_size, sizeof(*seeds));
 	diffusion_nodes nodes = {0};
+	la_track **res = NULL;
+	int ret = -1;
+	size_t active = src_size, started = 0, finished = 0, processed = 0, pending = src_size;
 	da_init(nodes.owned, sizeof(*nodes.owned));
-	diff_num = 0;
 	da_init(res, sizeof(*res));
-	for (i = 0, cur = *src; cur && !ls->budget_exhausted && !nodes.exhausted; cur = *(++src), ++i) {
-		child_size = _lastfmapi_diffusion_track(cur, diffusion, strategy, map, &child, ls, opts, i, src_size,
-							&nodes, identities);
-		diff_num += child_size;
-		if (!child_size)
-			goto cleanup_child;
-		da_append_arr(res, child, child_size);
-cleanup_child:
-		da_free(child);
-	}
-	if (opts.progress_bar && s->ur) {
-		snprintf(progress_desc, sizeof(progress_desc), "diffusion tracks [%zu/%zu]", i, src_size);
-		s->ur(s->update_entry, diff_num, diff_num, progress_desc);
+	for (size_t i = 0; i < src_size; i++) {
+		seeds[i].work = strategy & LASTFMAPI_DIFFUSION_DFS ? df_stack : df_queue;
+		df_deque_init(&seeds[i].work, 8);
+		seeds[i].work.push(&seeds[i].work, src[i]);
 	}
 
-	if (opts.progress_bar && s->uc) {
-		s->uc(s->update_entry);
+	/* Seed scheduling is round robin. DFS/BFS only controls which node that
+	 * seed pops on its turn; its remaining frontier survives every yield. */
+	while (active && !ls->budget_exhausted && !nodes.exhausted) {
+		for (size_t i = 0; i < src_size && !ls->budget_exhausted && !nodes.exhausted; i++) {
+			diffusion_seed *seed = &seeds[i];
+			if (df_deque_empty(&seed->work))
+				continue;
+			if (!seed->started) {
+				seed->started = true;
+				started++;
+			}
+			size_t before = seed->work.size;
+			_lastfmapi_diffusion_step(&seed->work, diffusion, map, &res, ls, opts, &nodes, identities);
+			pending = pending - before + seed->work.size;
+			if (!ls->budget_exhausted && !nodes.exhausted)
+				processed++;
+			if (df_deque_empty(&seed->work)) {
+				finished++;
+				active--;
+			}
+			if (opts.progress_bar && s->ur) {
+				char desc[128];
+				snprintf(desc, sizeof(desc), "seeds %zu/%zu; done %zu%s", started, src_size, finished,
+					 ls->budget_exhausted || nodes.exhausted ? " (budget)" : "");
+				/* Always count processed/pending path nodes, including at stop. */
+				s->ur(s->update_entry, processed, processed + pending, desc);
+			}
+		}
 	}
+	if (opts.progress_bar && s->uc)
+		s->uc(s->update_entry);
+
 	if (_lastfmapi_latracks_score(res, da_len(res), opts.lastfmapi_opts.diff_lambda, period,
 				      opts.lastfmapi_opts.score_beta) < 0)
 		goto cleanup;
 	qsort(res, da_len(res), sizeof(*res), la_track_score_cmp);
 #ifdef LASTFMAPI_DEBUG
 	fprintf(stderr, "res of diff core\n");
-	for (i = 0; i < da_len(res); ++i) {
+	for (size_t i = 0; i < da_len(res); i++)
 		la_track_dump(stderr, res[i]);
-	}
 #endif
-
-	assert(diff_num == da_len(res));
 	ret = lastfmapi_select_unique(res, da_len(res), da_len(res), p_ref, opts.strict);
 cleanup:
 	if (nodes.exhausted)
 		mxrec_error_add(opts.error, "Last.fm API diffusion",
 				"node budget exhausted (%zu/%llu); candidates retained", da_len(nodes.owned),
 				(unsigned long long)opts.lastfmapi_opts.node_budget);
-	for (i = 0; i < da_len(nodes.owned); ++i)
+	for (size_t i = 0; i < src_size; i++)
+		df_deque_free(&seeds[i].work);
+	xfree(seeds);
+	for (size_t i = 0; i < da_len(nodes.owned); i++)
 		la_track_free(nodes.owned[i]);
 	da_free(nodes.owned);
 	da_free(res);
 	return ret;
 }
 
+/* Consume a parsed child array. The attempt owns every accepted node, while
+ * only songs outside history enter the candidate list. Frontier entries borrow
+ * these nodes, so pending paths stay valid until final scoring and cleanup. */
 LASTFMAPI_DECL
-size_t _lastfmapi_diffusion_track(la_track *info, int diffusion, lastfmapi_diffusion_strategy strategy,
-				  const la_track *map, la_track ***res, lastfmapi_source *ls, recomm_option opts,
-				  size_t cur_idx, size_t total_tracks, diffusion_nodes *nodes,
-				  la_identity_pool *identities)
+void lastfmapi_diffusion_keep(la_track **children, size_t count, df_deque *work, const la_track *map, la_track ***res,
+			      diffusion_nodes *nodes, uint64_t node_budget)
 {
-	df_deque dq;
-	la_track *cur, *find, *str, *sar, **sim_trs, **sim_ars, **total_res;
-	size_t i, sim_tr_size, sim_ar_size, diff;
-	size_t diff_size = 0;
-	char progress_desc[256];
-
-	if (strategy & LASTFMAPI_DIFFUSION_DFS)
-		dq = df_stack;
-	else if (strategy & LASTFMAPI_DIFFUSION_BFS)
-		dq = df_queue;
-	assert(dq.push && dq.pop);
-	df_deque_init(&dq, 8);
-	dq.push(&dq, info);
-	total_res = NULL;
-	da_init(total_res, sizeof(*total_res));
-	diff = opts.lastfmapi_opts.diff_size;
-
-	source *s = &ls->src;
-	size_t cur_size = 0;
-	while (!df_deque_empty(&dq) && !ls->budget_exhausted && !nodes->exhausted) {
-#ifdef LASTFMAPI_DEBUG
-		fprintf(stderr, "current dq size:%zu\n", dq.size);
-#endif
-		size_t _diff_size = 0;
-		cur = dq.pop(&dq);
-		++cur_size;
-#ifdef LASTFMAPI_DEBUG
-		fprintf(stderr, "curent ltr diffusion is %d\n", cur->diffusion);
-#endif
-		if (cur->diffusion >= diffusion) {
-			goto cleanup;
+	for (size_t i = 0; i < count; i++) {
+		la_track *child = children[i], *history;
+		if (da_len(nodes->owned) >= node_budget) {
+			nodes->exhausted = true;
+			la_track_free(child);
+			continue;
 		}
-		sim_tr_size = _lastfmapi_get_track_similar(cur, diff, &sim_trs, ls, opts, identities);
-		if (!sim_tr_size && !sim_trs)
-			goto after_track;
-		for (i = 0; i < sim_tr_size; ++i) {
-			/*
-			 * ltr in recent track will be kept in diffusion path
-			 * but will not be appended into result.
-			 */
-			str = sim_trs[i];
-			if (da_len(nodes->owned) >= opts.lastfmapi_opts.node_budget) {
-				nodes->exhausted = true;
-				la_track_free(str);
-				continue;
-			}
-			da_append(nodes->owned, str);
-			dq.push(&dq, str);
-			HASH_FIND_BYHASHVALUE(hh, map, str->key.identity->data, str->key.identity->len,
-					      str->key.identity->hash, find);
-			if (find == NULL) {
-				da_append(total_res, str);
-				++_diff_size;
-			} else {
-				str->ruts = find->ruts;
-			}
-		}
-		diff_size += _diff_size;
-		xfree(sim_trs);
-after_track:
-		if (nodes->exhausted || ls->budget_exhausted)
-			goto cleanup;
-		_diff_size = 0;
-		sim_ar_size = _lastfmapi_diffusion_artist(cur, diffusion, diff, &sim_ars, ls, opts, identities);
-		if (!sim_ar_size && !sim_ars)
-			goto cleanup;
-		for (i = 0; i < sim_ar_size; ++i) {
-			sar = sim_ars[i];
-			if (da_len(nodes->owned) >= opts.lastfmapi_opts.node_budget) {
-				nodes->exhausted = true;
-				la_track_free(sar);
-				continue;
-			}
-			da_append(nodes->owned, sar);
-			dq.push(&dq, sar);
-			HASH_FIND_BYHASHVALUE(hh, map, sar->key.identity->data, sar->key.identity->len,
-					      sar->key.identity->hash, find);
-			if (find == NULL) {
-				da_append(total_res, sar);
-				++_diff_size;
-			} else {
-				sar->ruts = find->ruts;
-			}
-		}
-		diff_size += _diff_size;
-		xfree(sim_ars);
-cleanup:
-		if (opts.progress_bar && s->ur) {
-			snprintf(progress_desc, sizeof(progress_desc), "diffusion tracks [%zu/%zu]", cur_idx,
-				 total_tracks);
-			s->ur(s->update_entry, cur_size, cur_size + dq.size, progress_desc);
-		}
+		da_append(nodes->owned, child);
+		work->push(work, child);
+		HASH_FIND_BYHASHVALUE(hh, map, child->key.identity->data, child->key.identity->len,
+				      child->key.identity->hash, history);
+		if (!history)
+			da_append(*res, child);
+		else
+			child->ruts = history->ruts;
 	}
-	df_deque_free(&dq);
-	*res = total_res;
-	return diff_size;
+	xfree(children);
+}
+
+/* Expand at most one node. An unfinished node is put back when a shared budget
+ * stops the attempt, so progress still counts that work as pending. */
+LASTFMAPI_DECL
+void _lastfmapi_diffusion_step(df_deque *work, int diffusion, const la_track *map, la_track ***res,
+			       lastfmapi_source *ls, recomm_option opts, diffusion_nodes *nodes,
+			       la_identity_pool *identities)
+{
+	la_track *cur = work->pop(work);
+	if (cur->diffusion >= diffusion)
+		return;
+	la_track **children = NULL;
+	size_t count =
+		_lastfmapi_get_track_similar(cur, opts.lastfmapi_opts.diff_size, &children, ls, opts, identities);
+	lastfmapi_diffusion_keep(children, count, work, map, res, nodes, opts.lastfmapi_opts.node_budget);
+	if (!ls->budget_exhausted && !nodes->exhausted) {
+		children = NULL;
+		count = _lastfmapi_diffusion_artist(cur, diffusion, opts.lastfmapi_opts.diff_size, &children, ls, opts,
+						    identities);
+		lastfmapi_diffusion_keep(children, count, work, map, res, nodes, opts.lastfmapi_opts.node_budget);
+	}
+	if (ls->budget_exhausted || nodes->exhausted)
+		work->push(work, cur);
 }
 
 LASTFMAPI_DECL

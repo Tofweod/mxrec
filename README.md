@@ -292,7 +292,18 @@ ends diffusion successfully and retains collected candidates, with a diagnostic
 on stderr. Budget limits can produce fewer candidates than the final target.
 Actual request failures still retain partial results and trigger the existing
 source failure retry rule. Every retry starts with fresh budgets and cache.
-DFS/BFS and seed order determine which branches are explored before a limit.
+Each seed retains its own DFS stack or BFS queue. Seeds take turns in history
+order, processing at most one path node per turn; exhausted frontiers are skipped.
+This spreads exploration across seeds before revisiting an earlier seed, while
+preserving the local DFS/BFS pop order. One expansion can issue multiple HTTP
+requests, so turns balance node visits rather than exact request counts. All
+seeds still share the same budgets, identity pool and query cache; a very small
+budget can stop before every seed gets a turn.
+
+Diffusion progress consistently reports processed path nodes over processed plus
+pending nodes. The label shows started/selected seeds and fully drained seeds
+(`done`); budget stops are marked explicitly and retain unfinished frontiers in
+the pending count until cleanup.
 
 Each Last.fm API fetch attempt owns one identity pool, shared by its history
 and all seed/diffusion path nodes. Nodes borrow an immutable canonical
@@ -311,7 +322,7 @@ budget also bounds repeated paths through cycles when queries hit the cache.
 selects weighted seeds without replacement. `random-sample-lambda` is the ratio
 of the newest seed's weight to the oldest seed's weight: `1` is uniform, values
 above `1` favor recent songs, and values between `0` and `1` favor older songs.
-Selected seeds are traversed in history order. This sampling is separate from
+Selected seeds take their turns in history order. This sampling is separate from
 `[general] sample`, which samples source candidates during the final merge.
 
 The ranking formula has changed from a weighted mean including a zero-valued
