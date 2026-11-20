@@ -67,7 +67,10 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->lastfmapi_diffusion_size = iniparser_getuint64(d, "lastfm.api:diff-size", 5);
 	cfg->lastfmapi_strategy = xstrdup(config_get_string_or_default(d, "lastfm.api:strategy", NULL));
 	cfg->lastfmapi_sample = xstrdup(config_get_string_or_default(d, "lastfm.api:sample", NULL));
-	cfg->lastfmapi_random_lambda = iniparser_getdouble(d, "lastfm.api:random-sample-lambda", 0.0);
+	cfg->lastfmapi_seed_count = iniparser_getuint64(d, "lastfm.api:seed-count", 20);
+	cfg->lastfmapi_request_budget = iniparser_getuint64(d, "lastfm.api:request-budget", 200);
+	cfg->lastfmapi_node_budget = iniparser_getuint64(d, "lastfm.api:node-budget", 5000);
+	cfg->lastfmapi_random_lambda = iniparser_getdouble(d, "lastfm.api:random-sample-lambda", 1.0);
 	cfg->lastfmapi_diff_lambda = iniparser_getdouble(d, "lastfm.api:diffusion-lambda", 1.0);
 	cfg->lastfmapi_score_beta = iniparser_getdouble(d, "lastfm.api:score-beta", 10.0);
 

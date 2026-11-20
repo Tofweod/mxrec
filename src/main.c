@@ -139,6 +139,9 @@ enum cli_opt_id {
 		CLI_OPT_COUNT
 };
 
+/* Presence is independent of value: zero is a meaningful override. */
+static bool cli_fields_set[CLI_OPT_COUNT];
+
 struct option cli_long_opts[] = {{"config", required_argument, 0, 'c'},
 				 {"help", no_argument, 0, 'h'},
 				 {"version", no_argument, 0, 'V'},
@@ -255,7 +258,12 @@ static int cli_set_field(config_t *opts, int opt_id, const char *val)
 	switch (opt_id) {
 #define CONFIG_FIELD(type, name, ...)                                                                                  \
 	case OPT_##name:                                                                                               \
-		return cli_set_field_typed(&opts->name, val, CONFIG_TYPE_OF(type));
+		do {                                                                                                   \
+			int ret = cli_set_field_typed(&opts->name, val, CONFIG_TYPE_OF(type));                         \
+			if (!ret)                                                                                      \
+				cli_fields_set[opt_id] = true;                                                         \
+			return ret;                                                                                    \
+		} while (0);
 		CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
 	default:
@@ -271,6 +279,7 @@ int cli_parse_opts(int argc, char **argv, config_t *opts, const char **config_fi
 	size_t nsrc = 0;
 
 	memset(opts, 0, sizeof(*opts));
+	memset(cli_fields_set, 0, sizeof(cli_fields_set));
 	*config_file = NULL;
 
 	opterr = 0;
@@ -352,12 +361,7 @@ int sources_build(config_t *cfg, const char **names, size_t count)
 	return 0;
 }
 
-static void config_overwrite_uint64_t(void *dest, const void *src)
-{
-	uint64_t v = *(const uint64_t *)src;
-	if (v)
-		*(uint64_t *)dest = v;
-}
+static void config_overwrite_uint64_t(void *dest, const void *src) { *(uint64_t *)dest = *(const uint64_t *)src; }
 
 static void config_overwrite_u8s(void *dest, const void *src)
 {
@@ -382,12 +386,7 @@ static void config_overwrite_cstr(void *dest, const void *src)
 	}
 }
 
-static void config_overwrite_double(void *dest, const void *src)
-{
-	double v = *(const double *)src;
-	if (fabs(v) > 1e-12)
-		*(double *)dest = v;
-}
+static void config_overwrite_double(void *dest, const void *src) { *(double *)dest = *(const double *)src; }
 
 static void config_overwrite_field_typed(void *dest, const void *src, enum config_type type)
 {
@@ -411,7 +410,9 @@ static void config_overwrite(config_t *dest, const config_t *src)
 {
 	if (!dest || !src)
 		return;
-#define CONFIG_FIELD(type, name, ...) config_overwrite_field_typed(&dest->name, &src->name, CONFIG_TYPE_OF(type));
+#define CONFIG_FIELD(type, name, ...)                                                                                  \
+	if (cli_fields_set[OPT_##name])                                                                                \
+		config_overwrite_field_typed(&dest->name, &src->name, CONFIG_TYPE_OF(type));
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
 }
@@ -604,6 +605,9 @@ int main(int argc, char **argv)
 				       {
 					       .diffusion = config.lastfmapi_diffusion_level,
 					       .diff_size = config.lastfmapi_diffusion_size,
+					       .seed_count = config.lastfmapi_seed_count,
+					       .request_budget = config.lastfmapi_request_budget,
+					       .node_budget = config.lastfmapi_node_budget,
 					       .random_lambda = config.lastfmapi_random_lambda,
 					       .diff_lambda = config.lastfmapi_diff_lambda,
 					       .score_beta = config.lastfmapi_score_beta,

@@ -274,6 +274,64 @@ The API query uses `from`; time scoring uses the elapsed duration `now - from`,
 so `1week` gives a scoring scale of 604800 seconds. Invalid dates, overflowing
 lookbacks, pre-epoch absolute starts, and starts at or after now are rejected.
 
+### Last.fm diffusion limits and ranking
+
+The final `-n`/`target` controls the merged output size. It no longer controls
+how many history seeds Last.fm API expands. `[lastfm.api]` has separate limits:
+
+| Option | Default | Meaning |
+| --- | ---: | --- |
+| `seed-count` | 20 | Maximum distinct history seeds per attempt, capped by available history |
+| `request-budget` | 200 | Actual diffusion HTTP requests per attempt, excluding the initial history fetch |
+| `node-budget` | 5000 | Retained path nodes per attempt, including duplicates and history intermediates |
+| `diffusion` | 0 | Maximum diffusion depth; artist-to-top-track traversal costs two levels |
+| `diff-size` | 5 | Requested track branching size; artist branching uses its square root |
+
+Budgets are shared across all seeds within one attempt. Reaching either budget
+ends diffusion successfully and retains collected candidates, with a diagnostic
+on stderr. Budget limits can produce fewer candidates than the final target.
+Actual request failures still retain partial results and trigger the existing
+source failure retry rule. Every retry starts with fresh budgets and cache.
+DFS/BFS and seed order determine which branches are explored before a limit.
+
+Each Last.fm API fetch attempt owns one identity pool, shared by its history
+and all seed/diffusion path nodes. Nodes borrow an immutable canonical
+title/artist key and cached hash from that pool; equivalent songs share the same
+key object even when MBIDs are missing or different. Interning normalizes each
+incoming title/artist pair before looking up the canonical key. The pool is a
+local fetch variable passed explicitly through parsing and diffusion, with no
+process-global identity state. Path nodes and history are freed before the pool;
+retries start with a fresh pool. A per-attempt query cache reuses successful, valid-JSON
+HTTP responses for identical request URLs. Cache hits do not consume request
+budget. Failed requests are not cached. Cached responses are parsed into separate
+nodes for each path, preserving independent parents, depth and scores. The node
+budget also bounds repeated paths through cycles when queries hit the cache.
+
+`sample=topn` selects the most recently heard distinct songs. `sample=random`
+selects weighted seeds without replacement. `random-sample-lambda` is the ratio
+of the newest seed's weight to the oldest seed's weight: `1` is uniform, values
+above `1` favor recent songs, and values between `0` and `1` favor older songs.
+Selected seeds are traversed in history order. This sampling is separate from
+`[general] sample`, which samples source candidates during the final merge.
+
+The ranking formula has changed from a weighted mean including a zero-valued
+root to:
+
+```text
+score = 100 * product(path similarities)
+            * exp(-diffusion-lambda * (depth - 1))
+            / (1 + score-beta * clamp(seed_age / history_window, 0, 1))
+```
+
+The root contributes recency, with no similarity edge. Similarity accepts either
+a JSON number or decimal string in `[0,1]`. Artist-to-top-track traversal
+contributes the artist similarity once and two diffusion levels. At equal edge
+similarity, longer paths cannot gain score merely by adding hops. The highest
+scoring path wins when multiple paths reach the same song. `diffusion-lambda`
+now controls depth decay and `score-beta` controls root recency decay; both are
+finite, nonnegative values, with `0` disabling that factor. Existing tuned values
+may need adjustment because the ranking semantics have changed.
+
 ### Merge weights
 
 When `merge=weighted`, each source has a weight:

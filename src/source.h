@@ -42,10 +42,13 @@ typedef struct recomm_option {
 	// lastfm api
 	struct {
 		/**
-		 * Diffusion should be positive, representing the maximum diffusion level.
+		 * Maximum diffusion depth; zero disables expansion.
 		 */
-		unsigned diffusion;
-		unsigned diff_size;
+		uint64_t diffusion;
+		uint64_t diff_size;
+		uint64_t seed_count;
+		uint64_t request_budget;
+		uint64_t node_budget;
 
 		double random_lambda;
 		double diff_lambda;

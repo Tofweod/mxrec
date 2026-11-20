@@ -26,6 +26,9 @@ int main()
 	if ((ret = recomm_multi(s, 5, &p, .level = RECOMM_SIMPLE, .use_security = true,
 				.lastfmapi_opts.diffusion = cfg.lastfmapi_diffusion_level,
 				.lastfmapi_opts.diff_size = cfg.lastfmapi_diffusion_size,
+				.lastfmapi_opts.seed_count = cfg.lastfmapi_seed_count,
+				.lastfmapi_opts.request_budget = cfg.lastfmapi_request_budget,
+				.lastfmapi_opts.node_budget = cfg.lastfmapi_node_budget,
 				.lastfmapi_opts.random_lambda = cfg.lastfmapi_random_lambda,
 				.lastfmapi_opts.diff_lambda = cfg.lastfmapi_diff_lambda,
 				.lastfmapi_opts.score_beta = cfg.lastfmapi_score_beta)) > 0) {

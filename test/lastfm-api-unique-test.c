@@ -38,15 +38,17 @@ static playlist select_songs(la_track **candidates, size_t n, size_t wanted, boo
 
 int main(void)
 {
+	la_identity_pool identities = {0};
 	/* A large duplicate prefix must not hide later distinct songs. */
 	la_track *candidates[196];
 	for (size_t i = 0; i < 192; i++)
-		candidates[i] = la_track_new(i % 2 ? "ＳＯＮＧ" : " Song ", i % 2 ? "ARTIST" : " artist ", NULL, NULL);
-	candidates[192] = la_track_new("Second", "Artist", NULL, NULL);
-	candidates[193] = la_track_new("second", "Artist", NULL, NULL);
-	candidates[194] = la_track_new("Third", "Artist", NULL, NULL);
+		candidates[i] = la_track_new(i % 2 ? "ＳＯＮＧ" : " Song ", i % 2 ? "ARTIST" : " artist ", NULL, NULL,
+					     &identities);
+	candidates[192] = la_track_new("Second", "Artist", NULL, NULL, &identities);
+	candidates[193] = la_track_new("second", "Artist", NULL, NULL, &identities);
+	candidates[194] = la_track_new("Third", "Artist", NULL, NULL, &identities);
 	/* Once target is reached, even an invalid tail must remain unexamined. */
-	candidates[195] = la_track_new(" ", "Artist", NULL, NULL);
+	candidates[195] = la_track_new(" ", "Artist", NULL, NULL, &identities);
 	playlist out = select_songs(candidates, 196, 3, true, 3, 3);
 	CHECK(strcmp((const char *)out[0].tr->title, " Song ") == 0);
 	CHECK(strcmp((const char *)out[1].tr->title, "Second") == 0);
@@ -64,14 +66,15 @@ int main(void)
 	for (size_t i = 0; i < 196; i++)
 		la_track_free(candidates[i]);
 
-	la_track *bad[] = {la_track_new("Valid", "Artist", NULL, NULL),
-			   la_track_new("Missing artist", NULL, NULL, NULL),
-			   la_track_new("Other", "Artist", NULL, NULL)};
+	la_track *bad[] = {la_track_new("Valid", "Artist", NULL, NULL, &identities),
+			   la_track_new("Missing artist", NULL, NULL, NULL, &identities),
+			   la_track_new("Other", "Artist", NULL, NULL, &identities)};
 	select_songs(bad, 3, 3, true, -1, 1);
 	out = select_songs(bad, 3, 3, false, 2, 2);
 	playlist_free(out);
 	for (size_t i = 0; i < 3; i++)
 		la_track_free(bad[i]);
+	la_identity_pool_free(&identities);
 	puts("lastfm-api-unique-test passed");
 	return 0;
 }
