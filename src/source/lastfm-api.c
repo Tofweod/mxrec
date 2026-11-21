@@ -525,7 +525,9 @@ typedef struct diffusion_seed {
 LASTFMAPI_DECL
 void _lastfmapi_diffusion_step(df_deque *work, int diffusion, const la_track *map, la_track ***res,
 			       lastfmapi_source *ls, recomm_option opts, diffusion_nodes *nodes,
-			       la_identity_pool *identities);
+			       la_identity_pool *identities, time_t period);
+LASTFMAPI_DECL
+int _lastfmapi_latrack_score(la_track *ltr, double lambda, time_t period, double beta);
 LASTFMAPI_DECL
 int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time_t period, double beta);
 
@@ -1103,7 +1105,8 @@ int _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusi
 				started++;
 			}
 			size_t before = seed->work.size;
-			_lastfmapi_diffusion_step(&seed->work, diffusion, map, &res, ls, opts, &nodes, identities);
+			_lastfmapi_diffusion_step(&seed->work, diffusion, map, &res, ls, opts, &nodes, identities,
+						  period);
 			pending = pending - before + seed->work.size;
 			if (!ls->budget_exhausted && !nodes.exhausted)
 				processed++;
@@ -1150,28 +1153,96 @@ cleanup:
 	return ret;
 }
 
-/* Consume a parsed child array. The attempt owns every accepted node, while
- * only songs outside history enter the candidate list. Frontier entries borrow
- * these nodes, so pending paths stay valid until final scoring and cleanup. */
+LASTFMAPI_DECL
+bool lastfmapi_nullable_equal(const char *a, const char *b) { return a == b || (a && b && strcmp(a, b) == 0); }
+
+/* Only prune an ancestor with identical expansion queries. Canonical identity
+ * alone is insufficient: raw spelling and either MBID can change a request.
+ * A repeated query state cannot improve its path score (all matches <= 1 and
+ * depth penalties are nonnegative), and has less depth left to explore. */
+LASTFMAPI_DECL
+bool lastfmapi_diffusion_cycle(const la_track *child)
+{
+	for (const la_track *ancestor = child->parent; ancestor; ancestor = ancestor->parent) {
+		if (ancestor->key.identity == child->key.identity &&
+		    strcmp((const char *)ancestor->key.name, (const char *)child->key.name) == 0 &&
+		    strcmp((const char *)ancestor->key.artist, (const char *)child->key.artist) == 0 &&
+		    lastfmapi_nullable_equal(ancestor->key.tr_mbid, child->key.tr_mbid) &&
+		    lastfmapi_nullable_equal(ancestor->key.ar_mbid, child->key.ar_mbid))
+			return true;
+	}
+	return false;
+}
+
+/* Stable descending merge sort: equal-score siblings retain response order,
+ * including track children before artist children when the branches tie. */
+LASTFMAPI_DECL
+void lastfmapi_children_sort(la_track **children, la_track **scratch, size_t count)
+{
+	if (count < 2)
+		return;
+	size_t mid = count / 2;
+	lastfmapi_children_sort(children, scratch, mid);
+	lastfmapi_children_sort(children + mid, scratch + mid, count - mid);
+	size_t left = 0, right = mid, out = 0;
+	while (left < mid && right < count)
+		scratch[out++] = children[left]->score >= children[right]->score ? children[left++] : children[right++];
+	while (left < mid)
+		scratch[out++] = children[left++];
+	while (right < count)
+		scratch[out++] = children[right++];
+	memcpy(children, scratch, count * sizeof(*children));
+}
+
+/* Consume both branches together. Prune cycles before budget admission, then
+ * admit the highest path scores first. Every accepted node lives until final
+ * scoring/cleanup; frontier entries and parent links only borrow these nodes. */
 LASTFMAPI_DECL
 void lastfmapi_diffusion_keep(la_track **children, size_t count, df_deque *work, const la_track *map, la_track ***res,
-			      diffusion_nodes *nodes, uint64_t node_budget)
+			      diffusion_nodes *nodes, recomm_option opts, time_t period)
 {
+	size_t kept = 0;
+	for (size_t i = 0; i < count; i++) {
+		la_track *child = children[i];
+		if (lastfmapi_diffusion_cycle(child)) {
+			la_track_free(child);
+			continue;
+		}
+		_lastfmapi_latrack_score(child, opts.lastfmapi_opts.diff_lambda, period,
+					 opts.lastfmapi_opts.score_beta);
+		children[kept++] = child;
+	}
+	count = kept;
+	if (count > 1) {
+		la_track **scratch = xreallocarray(NULL, count, sizeof(*scratch));
+		lastfmapi_children_sort(children, scratch, count);
+		xfree(scratch);
+	}
+	kept = 0;
 	for (size_t i = 0; i < count; i++) {
 		la_track *child = children[i], *history;
-		if (da_len(nodes->owned) >= node_budget) {
+		if (da_len(nodes->owned) >= opts.lastfmapi_opts.node_budget) {
 			nodes->exhausted = true;
 			la_track_free(child);
 			continue;
 		}
 		da_append(nodes->owned, child);
-		work->push(work, child);
+		children[kept++] = child;
 		HASH_FIND_BYHASHVALUE(hh, map, child->key.identity->data, child->key.identity->len,
 				      child->key.identity->hash, history);
 		if (!history)
 			da_append(*res, child);
 		else
 			child->ruts = history->ruts;
+	}
+	/* DFS pops the back, so push low to high. BFS appends high to low and
+	 * keeps all previously queued nodes ahead of these new siblings. */
+	if (work->pop == df_deque_pop_back) {
+		for (size_t i = kept; i > 0; i--)
+			work->push(work, children[i - 1]);
+	} else {
+		for (size_t i = 0; i < kept; i++)
+			work->push(work, children[i]);
 	}
 	xfree(children);
 }
@@ -1181,7 +1252,7 @@ void lastfmapi_diffusion_keep(la_track **children, size_t count, df_deque *work,
 LASTFMAPI_DECL
 void _lastfmapi_diffusion_step(df_deque *work, int diffusion, const la_track *map, la_track ***res,
 			       lastfmapi_source *ls, recomm_option opts, diffusion_nodes *nodes,
-			       la_identity_pool *identities)
+			       la_identity_pool *identities, time_t period)
 {
 	la_track *cur = work->pop(work);
 	if (cur->diffusion >= diffusion)
@@ -1189,13 +1260,18 @@ void _lastfmapi_diffusion_step(df_deque *work, int diffusion, const la_track *ma
 	la_track **children = NULL;
 	size_t count =
 		_lastfmapi_get_track_similar(cur, opts.lastfmapi_opts.diff_size, &children, ls, opts, identities);
-	lastfmapi_diffusion_keep(children, count, work, map, res, nodes, opts.lastfmapi_opts.node_budget);
-	if (!ls->budget_exhausted && !nodes->exhausted) {
-		children = NULL;
-		count = _lastfmapi_diffusion_artist(cur, diffusion, opts.lastfmapi_opts.diff_size, &children, ls, opts,
-						    identities);
-		lastfmapi_diffusion_keep(children, count, work, map, res, nodes, opts.lastfmapi_opts.node_budget);
+	if (!ls->budget_exhausted) {
+		la_track **artist_children = NULL;
+		size_t artist_count = _lastfmapi_diffusion_artist(cur, diffusion, opts.lastfmapi_opts.diff_size,
+								  &artist_children, ls, opts, identities);
+		if (artist_count) {
+			children = xreallocarray(children, count + artist_count, sizeof(*children));
+			memcpy(children + count, artist_children, artist_count * sizeof(*children));
+			count += artist_count;
+		}
+		xfree(artist_children);
 	}
+	lastfmapi_diffusion_keep(children, count, work, map, res, nodes, opts, period);
 	if (ls->budget_exhausted || nodes->exhausted)
 		work->push(work, cur);
 }

@@ -300,6 +300,16 @@ requests, so turns balance node visits rather than exact request counts. All
 seeds still share the same budgets, identity pool and query cache; a very small
 budget can stop before every seed gets a turn.
 
+Each expansion collects available track and artist children before admitting
+nodes to the shared node budget. Children are ordered by their full path score;
+equal scores retain response order, with track children first on a branch tie.
+DFS pushes this order in reverse so its next visit follows the highest-scoring
+child. BFS appends children in score order while retaining its FIFO semantics;
+the artist branch's extra diffusion level does not turn this into a strict
+numeric-depth traversal. When node space runs out, higher-scoring children from
+that expansion are retained first. Comparing both branches can spend additional
+requests before reaching the node limit; the request budget remains a hard cap.
+
 Diffusion progress consistently reports processed path nodes over processed plus
 pending nodes. The label shows started/selected seeds and fully drained seeds
 (`done`); budget stops are marked explicitly and retain unfinished frontiers in
@@ -315,8 +325,14 @@ process-global identity state. Path nodes and history are freed before the pool;
 retries start with a fresh pool. A per-attempt query cache reuses successful, valid-JSON
 HTTP responses for identical request URLs. Cache hits do not consume request
 budget. Failed requests are not cached. Cached responses are parsed into separate
-nodes for each path, preserving independent parents, depth and scores. The node
-budget also bounds repeated paths through cycles when queries hit the cache.
+nodes for each path, preserving independent parents, depth and scores. A new
+node is discarded before budget admission if its parent chain already contains the
+same canonical song and identical raw title, artist and both MBID fields. This
+prunes cycles without a visited table; with similarities in `[0,1]` and
+nonnegative depth penalties, such a return cannot improve the path score or
+remaining depth. Different query variants, independent seeds and paths that
+converge without a cycle remain eligible. Retained paths still share the node
+budget and remain alive until final scoring and output construction.
 
 `sample=topn` selects the most recently heard distinct songs. `sample=random`
 selects weighted seeds without replacement. `random-sample-lambda` is the ratio
