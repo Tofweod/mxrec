@@ -415,6 +415,9 @@ static void config_overwrite(config_t *dest, const config_t *src)
 		config_overwrite_field_typed(&dest->name, &src->name, CONFIG_TYPE_OF(type));
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
+	dest->lastfmapi_merge_weight_set |= cli_fields_set[OPT_lastfmapi_merge_weight];
+	dest->lastfmweb_merge_weight_set |= cli_fields_set[OPT_lastfmweb_merge_weight];
+	config_resolve_weights(dest);
 }
 
 // manually build
@@ -450,19 +453,6 @@ enum dumpType str2dumptype(const char *type_str)
 	mxrec_unreachable();
 }
 
-static double merge_weight_for_source(const char *name)
-{
-	if (strcmp(name, "lastfmapi") == 0)
-		return config.lastfmapi_merge_weight;
-	if (strcmp(name, "lastfmweb") == 0)
-		return config.lastfmweb_merge_weight;
-	if (strncmp(name, "lastfm", 6) == 0)
-		return config.lastfm_merge_weight;
-	if (strcmp(name, "ncm") == 0)
-		return config.ncm_merge_weight;
-	return 1.0;
-}
-
 static merge_source_fp str2merge_source(const char *name)
 {
 	if (!name || !*name)
@@ -492,7 +482,7 @@ static int str2sample_method(const char *name, enum sample_method *method)
 	return -1;
 }
 
-static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name, const char **src_names,
+static struct merge_params *merge_params_build(const char *merge_name, const char *sample_name, source *const *srcs,
 					       size_t source_size)
 {
 	merge_source_fp merge = str2merge_source(merge_name);
@@ -507,8 +497,24 @@ static struct merge_params *merge_params_build(const char *merge_name, const cha
 		p->base.merge_source = merge;
 		p->base.sample = sample;
 		p->weights = xmalloc(source_size * sizeof(*p->weights));
-		for (i = 0; i < source_size; i++)
-			p->weights[i] = merge_weight_for_source(src_names[i]);
+		bool any_positive = false;
+		for (i = 0; i < source_size; i++) {
+			double weight = srcs[i]->merge_weight;
+			if (!isfinite(weight) || weight < 0) {
+				error("source %s: merge_weight must be finite and nonnegative", srcs[i]->name);
+				xfree(p->weights);
+				xfree(p);
+				return NULL;
+			}
+			p->weights[i] = weight;
+			any_positive |= weight > 0;
+		}
+		if (source_size && !any_positive) {
+			error("weighted merge requires at least one positive source weight");
+			xfree(p->weights);
+			xfree(p);
+			return NULL;
+		}
 		p->count = source_size;
 		return &p->base;
 	}
@@ -616,15 +622,28 @@ int main(int argc, char **argv)
 				       .daily_recomm_fresh = true,
 			       }};
 
-	task_bus_init(source_count);
-	for (i = 0; i < source_count; ++i) {
-		tasks[i] = (struct source_task){
-			.src = sources[i],
-			.wanted = target,
-		};
-		source_session_init(&tasks[i].session, sources[i], opts);
-		source_task_spawn(&tasks[i], i, enable_threads);
+	params = merge_params_build(config.merge, config.sample, sources, source_count);
+	if (!params) {
+		error("invalid merge/sample configuration");
+		mxrec_cleanup(cleanup, ret, 1);
 	}
+
+	bool invalid_options = false;
+	for (i = 0; i < source_count; ++i) {
+		tasks[i] = (struct source_task){.src = sources[i], .wanted = target};
+		recomm_option task_opts = opts;
+		task_opts.error = &tasks[i].error;
+		if (source_session_init(&tasks[i].session, sources[i], task_opts) < 0) {
+			mxrec_error_print(stderr, &tasks[i].error, sources[i]->name, 0, 0, -1, false);
+			invalid_options = true;
+		}
+	}
+	if (invalid_options)
+		mxrec_cleanup(cleanup, ret, 1);
+
+	task_bus_init(source_count);
+	for (i = 0; i < source_count; ++i)
+		source_task_spawn(&tasks[i], i, enable_threads);
 
 	source_task_collect_all(tasks, enable_threads);
 	task_bus_destroy();
@@ -644,11 +663,6 @@ int main(int argc, char **argv)
 		mxrec_cleanup(cleanup, ret, 1);
 
 	da_init(out, sizeof(*out));
-	params = merge_params_build(config.merge, config.sample, source_names, source_count);
-	if (!params) {
-		error("invalid merge/sample configuration");
-		mxrec_cleanup(cleanup, ret, 1);
-	}
 	merge_ready = true;
 	if (merge_state_init_viewers(&merge, &out, target, result_ptrs, source_count, params->sample) < 0) {
 		error("failed to initialize merge");

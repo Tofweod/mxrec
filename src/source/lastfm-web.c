@@ -61,6 +61,7 @@ int lastfmweb_source_init(void *sp, config_t *cfg)
 	lastfmweb_source *s = (lastfmweb_source *)sp;
 	s->src = __lastfmweb_source;
 	source_init(&s->src, cfg);
+	s->src.merge_weight = cfg->lastfmweb_merge_weight;
 
 	if (lastfm_security_init(cfg) < 0)
 		return -1;
@@ -193,7 +194,7 @@ int lastfmweb_prepare_curl(source *s, CURL *curl, struct curl_slist **h_ref, boo
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 #endif
 
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)s->timeout);
 
 	// set url
 	curl_easy_setopt(curl, CURLOPT_URL, url);

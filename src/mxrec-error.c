@@ -39,8 +39,10 @@ void mxrec_error_print(FILE *out, const mxrec_error *err, const char *source, un
 	if (!out || !err || !err->count)
 		return;
 	flockfile(out);
-	fprintf(out, "[%s] source=%s attempt=%llu/%llu%s\n", status < 0 ? "error" : "warning",
-		source ? source : "unknown", attempt, max_attempts, partial ? " (partial results retained)" : "");
+	fprintf(out, "[%s] source=%s", status < 0 ? "error" : "warning", source ? source : "unknown");
+	if (attempt)
+		fprintf(out, " attempt=%llu/%llu", attempt, max_attempts);
+	fprintf(out, "%s\n", partial ? " (partial results retained)" : "");
 	for (size_t i = 0; i < err->count; i++) {
 		const mxrec_error_frame *f = &err->frames[i];
 		fprintf(out, "  %s: %s%s (%s:%d, %s)\n", f->step, f->message, f->truncated ? " [truncated]" : "",

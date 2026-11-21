@@ -60,9 +60,13 @@ typedef struct config_t {
 #define CONFIG_FIELD(type, name, ...) type name;
 	CONFIG_FIELD_LIST
 #undef CONFIG_FIELD
+	/* Preserve explicit overrides while recomputing inherited weights after CLI. */
+	bool lastfmapi_merge_weight_set;
+	bool lastfmweb_merge_weight_set;
 } config_t;
 
 bool load_config(const char *filename, config_t *cfg);
+void config_resolve_weights(config_t *cfg);
 
 /** it simply free fields in config struct, if config itself is heap memory,
  *  please free it manually

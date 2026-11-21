@@ -22,6 +22,7 @@
  * ```
  */
 typedef struct source source;
+struct source_result;
 
 typedef struct recomm_option {
 	/**
@@ -85,6 +86,7 @@ typedef int (*before_recomm)(source *s, void *userdata);
 typedef int (*after_recomm)(source *s, void *userdata);
 
 typedef bool (*config_check)(source *s);
+typedef int (*validate_options_fp)(const source *s, const recomm_option *opts, mxrec_error *error);
 
 typedef void (*update_recomm)(void *update_entry, size_t cur, size_t total, const char *desc);
 typedef void (*update_clear)(void *update_entry);
@@ -105,6 +107,8 @@ typedef struct source {
 	void *security;
 
 	config_check cc;
+	/* Optional recommendation validation; never performs a fetch. */
+	validate_options_fp validate_options;
 
 	before_recomm br;
 	after_recomm ar;
@@ -116,13 +120,46 @@ typedef struct source {
 	void *userdata;
 
 	// general settings
+	/* Effective per-request timeout in ms; zero disables it. Must fit in long. */
 	uint64_t timeout;
 	uint64_t max_try;
+	/* Preferred share when weighted merging is selected. */
+	double merge_weight;
 	/* A successful short recommendation may be followed by another batch. */
 	bool refill_on_shortage;
+	/* Optional source-specific ordering before merge iterators are created.
+	 * A NULL result discards private collection state without touching items. */
+	void (*finalize_result)(source *s, struct source_result *result);
 } source;
 
 static inline void source_clearuserdata(source *s);
+
+/* Validate the effective source settings and this recommendation's options.
+ * Sessions call once at initialization; standalone wrappers call once per use. */
+static inline int source_validate_options(const source *s, recomm_option opts)
+{
+	mxrec_error local = {0};
+	mxrec_error *err = opts.error ? opts.error : &local;
+	size_t before = err->count;
+	int ret = 0;
+	if (!s) {
+		mxrec_error_add(err, "source configuration", "source is NULL");
+		ret = -1;
+	} else {
+		if (s->timeout > LONG_MAX) {
+			mxrec_error_add(err, "source configuration", "effective timeout must not exceed %ld ms",
+					LONG_MAX);
+			ret = -1;
+		}
+		if (s->validate_options && s->validate_options(s, &opts, err) < 0)
+			ret = -1;
+	}
+	if (ret < 0 && err->count == before)
+		mxrec_error_add(err, "source configuration", "recommendation options are invalid");
+	if (ret < 0 && !opts.error)
+		mxrec_error_print(stderr, err, s ? s->name : NULL, 0, 0, ret, false);
+	return ret;
+}
 
 static inline int source_before_recomm(source *s)
 {
@@ -148,6 +185,8 @@ static inline int _recomm_single(void *sp, playitem *p, recomm_option opts)
 {
 	source *s = (source *)sp;
 	assert(s->rsp);
+	if (source_validate_options(s, opts) < 0)
+		return -1;
 	return s->rsp(s, p, opts);
 }
 
@@ -163,7 +202,13 @@ static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option
 		return -1;
 	if (!num)
 		return 0;
+	if (s->finalize_result)
+		s->finalize_result(s, NULL);
+	if (source_validate_options(s, opts) < 0)
+		return -1;
 	ret = s->rmp(s, num, p, opts);
+	if (s->finalize_result)
+		s->finalize_result(s, NULL);
 	if (ret >= 0)
 		ret = playlist_unique_owned(p, num, opts.strict);
 	if (ret < 0) {
@@ -173,7 +218,8 @@ static inline int _recomm_multi(void *sp, size_t num, playlist *p, recomm_option
 	return ret;
 }
 
-/* One raw batch. The caller owns any returned partial playlist, even on failure. */
+/* One raw batch using prevalidated options. The caller owns any returned
+ * partial playlist, even on failure. Sessions use this for retries. */
 static inline int source_fetch_batch(source *s, size_t num, playlist *p, recomm_option opts)
 {
 	if (!s || !s->rmp || !p || num > INT_MAX)

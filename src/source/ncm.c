@@ -218,6 +218,7 @@ int ncm_source_init(void *sp, config_t *cfg)
 	ncm_source *s = (ncm_source *)sp;
 	s->src = __ncm_source;
 	source_init(&s->src, cfg);
+	s->src.merge_weight = cfg->ncm_merge_weight;
 
 	ncm_address_type type = str2addr_type(cfg->ncm_bind_method);
 	const char *address = cfg->ncm_bind_address;
@@ -525,7 +526,7 @@ int ncm_curl(source *s, curlbuf *buf, bool update, const ncm_module_entry entry,
 	CURL *curl = ns->curl;
 	ncm_address_type type = ns->addr_type;
 
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, s->timeout);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)s->timeout);
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, ncm_curl_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);

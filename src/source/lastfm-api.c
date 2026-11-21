@@ -8,6 +8,7 @@
 #include "json.h"
 #include "lastfm-comm.h"
 #include "monotonic.h"
+#include "playlist-viewer.h"
 #include "playlist.h"
 #include "random.h"
 #include "source.h"
@@ -56,6 +57,11 @@ size_t lastfmapi_write_callback(char *ptr, const size_t size, const size_t nmemb
 FUNCTION_FIELD_LIST
 
 #undef FUNCTION_FIELD
+
+LASTFMAPI_DECL
+void lastfmapi_finalize_result(source *s, struct source_result *result);
+LASTFMAPI_DECL
+int lastfmapi_validate_options(const source *s, const recomm_option *opts, mxrec_error *error);
 
 typedef struct lastfmapi_artist {
 	u8s name;
@@ -395,24 +401,36 @@ df_deque df_queue = {
 };
 
 LASTFMAPI_DECL
-lastfmapi_diffusion_strategy str2strategy(const char *s)
+lastfmapi_diffusion_strategy str2strategy(const char *strategy, const char *sample)
 {
-	const char *err_strategy;
-	if (s == NULL)
-		mxrec_cleanup(err, err_strategy, "NULL");
-	if (strcmp(s, "bfs") == 0)
-		return LASTFMAPI_DIFFUSION_BFS;
-	else if (strcmp(s, "dfs") == 0)
-		return LASTFMAPI_DIFFUSION_DFS;
-	else if (strcmp(s, "topn") == 0)
-		return LASTFMAPI_DIFFUSION_TOPN;
-	else if (strcmp(s, "random") == 0)
-		return LASTFMAPI_DIFFUSION_RAMSAMPLE;
-	else
-		mxrec_cleanup(err, err_strategy, s);
-err:
-	error("failed to convert %s into diffusion_strategy", err_strategy);
-	return LASTFMAPI_DIFFUSION_ERR;
+	lastfmapi_diffusion_strategy traversal, sampling;
+	if (strategy && strcmp(strategy, "bfs") == 0)
+		traversal = LASTFMAPI_DIFFUSION_BFS;
+	else if (strategy && strcmp(strategy, "dfs") == 0)
+		traversal = LASTFMAPI_DIFFUSION_DFS;
+	else {
+		error("lastfm.api:strategy must be dfs or bfs (got %s)", strategy ? strategy : "NULL");
+		return LASTFMAPI_DIFFUSION_ERR;
+	}
+	if (sample && strcmp(sample, "topn") == 0)
+		sampling = LASTFMAPI_DIFFUSION_TOPN;
+	else if (sample && strcmp(sample, "random") == 0)
+		sampling = LASTFMAPI_DIFFUSION_RAMSAMPLE;
+	else {
+		error("lastfm.api:sample must be topn or random (got %s)", sample ? sample : "NULL");
+		return LASTFMAPI_DIFFUSION_ERR;
+	}
+	return traversal | sampling;
+}
+
+LASTFMAPI_DECL
+bool lastfmapi_strategy_valid(lastfmapi_diffusion_strategy strategy)
+{
+	unsigned traversal = strategy & (LASTFMAPI_DIFFUSION_BFS | LASTFMAPI_DIFFUSION_DFS);
+	unsigned sampling = strategy & (LASTFMAPI_DIFFUSION_TOPN | LASTFMAPI_DIFFUSION_RAMSAMPLE);
+	return (traversal == LASTFMAPI_DIFFUSION_BFS || traversal == LASTFMAPI_DIFFUSION_DFS) &&
+	       (sampling == LASTFMAPI_DIFFUSION_TOPN || sampling == LASTFMAPI_DIFFUSION_RAMSAMPLE) &&
+	       strategy == (traversal | sampling);
 }
 
 LASTFMAPI_DECL
@@ -641,11 +659,13 @@ cleanup:
 static source __lastfmapi_source = {
 	.name = "lastfmapi",
 	.refill_on_shortage = false,
+	.finalize_result = lastfmapi_finalize_result,
 	.destroy = lastfmapi_source_destroy,
 	.rsp = lastfmapi_recomm_single,
 	.rmp = lastfmapi_recomm_multi,
 	.sh = lastfmapi_security_handle,
 	.cc = lastfmapi_config_check,
+	.validate_options = lastfmapi_validate_options,
 	.security = &__lastfm_security,
 };
 
@@ -655,6 +675,14 @@ typedef struct la_query_cache {
 	size_t len;
 	UT_hash_handle hh;
 } la_query_cache;
+
+/* Private collection state across attempts. Only compact ranking records
+ * survive each attempt; diffusion nodes and their identity pool are released. */
+typedef struct la_ranked_item {
+	const playitem *item;
+	double score;
+	size_t order;
+} la_ranked_item;
 
 LASTFMAPI_DECL
 void lastfmapi_query_cache_free(la_query_cache **cache)
@@ -685,7 +713,77 @@ struct lastfmapi_source {
 	bool diffusion_active, budget_exhausted;
 	uint64_t request_budget, requests_used;
 	la_query_cache *queries;
+	la_ranked_item *ranking;
 };
+
+LASTFMAPI_DECL
+void lastfmapi_ranking_clear(lastfmapi_source *ls)
+{
+	if (ls->ranking)
+		da_free(ls->ranking);
+	ls->ranking = NULL;
+}
+
+LASTFMAPI_DECL
+void lastfmapi_capture_ranking(lastfmapi_source *ls, la_track *const *candidates, size_t count, playlist batch)
+{
+	/* Raw callbacks without a collection finalizer need no retained ranking. */
+	if (!ls->src.finalize_result || !da_len(batch))
+		return;
+	if (!ls->ranking)
+		da_init(ls->ranking, sizeof(*ls->ranking));
+	track_key_set seen = {0};
+	size_t next = 0;
+	/* Mirror the selector's stable deduplication. Batch addresses are now final;
+	 * owning source-result segments keep these references valid until merging. */
+	for (size_t i = 0; i < count && next < da_len(batch); i++) {
+		const track_key *key = candidates[i]->key.identity;
+		if (!key || !track_key_set_add(&seen, key))
+			continue;
+		la_ranked_item item = {
+			.item = &batch[next++], .score = candidates[i]->score, .order = da_len(ls->ranking)};
+		da_append(ls->ranking, item);
+	}
+	assert(next == da_len(batch));
+	track_key_set_free(&seen);
+}
+
+LASTFMAPI_DECL
+int lastfmapi_ranked_item_cmp(const void *a, const void *b)
+{
+	const la_ranked_item *left = a, *right = b;
+	if (left->score > right->score)
+		return -1;
+	if (left->score < right->score)
+		return 1;
+	return (left->order > right->order) - (left->order < right->order);
+}
+
+LASTFMAPI_DECL
+void lastfmapi_finalize_result(source *s, struct source_result *result)
+{
+	lastfmapi_source *ls = (lastfmapi_source *)s;
+	if (result && da_len(ls->ranking)) {
+		qsort(ls->ranking, da_len(ls->ranking), sizeof(*ls->ranking), lastfmapi_ranked_item_cmp);
+		track_key_set seen = {0};
+		playlist_viewer *view = &result->viewer;
+		view->len = 0;
+		for (size_t i = 0; i < da_len(ls->ranking); i++) {
+			const playitem *item = ls->ranking[i].item;
+			track_key key = {0};
+			if (track_key_build(item->tr, &key) < 0)
+				continue;
+			bool added = track_key_set_add(&seen, &key);
+			track_key_free(&key);
+			if (added) {
+				assert(view->len < view->cap);
+				view->unique[view->len++] = item;
+			}
+		}
+		track_key_set_free(&seen);
+	}
+	lastfmapi_ranking_clear(ls);
+}
 
 LASTFMAPI_DECL
 char *kv_dump(kv_t *kv)
@@ -772,8 +870,7 @@ int lastfmapi_curl(curlbuf *buf, lastfmapi_source *ls, bool update, const char *
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 #endif
 
-	/* Diffusion requests deliberately ignore general:timeout. */
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 0L);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)s->timeout);
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, lastfmapi_write_callback);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
@@ -859,6 +956,9 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	memset(s, 0, sizeof(*s));
 	s->src = __lastfmapi_source;
 	source_init(&s->src, cfg);
+	/* This source deliberately ignores general:timeout. */
+	s->src.timeout = 0;
+	s->src.merge_weight = cfg->lastfmapi_merge_weight;
 
 	if (lastfm_security_init(cfg) < 0)
 		return -1;
@@ -872,7 +972,7 @@ int lastfmapi_source_init(void *sp, config_t *cfg)
 	s->base_url = xstrdup(cfg->lastfmapi_base_url);
 	s->key = xstrdup(cfg->lastfmapi_key);
 	s->period = xstrdup(cfg->lastfmapi_period);
-	s->strategy = str2strategy(cfg->lastfmapi_strategy) | str2strategy(cfg->lastfmapi_sample);
+	s->strategy = str2strategy(cfg->lastfmapi_strategy, cfg->lastfmapi_sample);
 	return source_check(s) ? 0 : -1;
 }
 
@@ -882,6 +982,7 @@ extern int lastfmapi_source_new(source **src, config_t *cfg)
 	*src = NULL;
 	void *s = xmalloc(sizeof(struct lastfmapi_source));
 	if (lastfmapi_source_init(s, cfg) < 0) {
+		lastfmapi_source_destroy(s);
 		xfree(s);
 		return -1;
 	}
@@ -898,6 +999,10 @@ int lastfmapi_diffusion_recomm(lastfmapi_source *ls, recomm_option opts, la_trac
 	size_t idx, *idxs = NULL, map_size;
 	size_t src_size;
 	lastfmapi_diffusion_strategy strategy = ls->strategy;
+	if (!lastfmapi_strategy_valid(strategy)) {
+		mxrec_error_add(opts.error, "Last.fm API configuration", "invalid diffusion strategy or seed sampling");
+		return -1;
+	}
 	if (!map) {
 		playlist empty = NULL;
 		da_init(empty, sizeof(*empty));
@@ -1028,6 +1133,8 @@ int _lastfmapi_diffusion_core(la_track **src, size_t src_size, lastfmapi_diffusi
 		la_track_dump(stderr, res[i]);
 #endif
 	ret = lastfmapi_select_unique(res, da_len(res), da_len(res), p_ref, opts.strict);
+	if (ret >= 0)
+		lastfmapi_capture_ranking(ls, res, da_len(res), *p_ref);
 cleanup:
 	if (nodes.exhausted)
 		mxrec_error_add(opts.error, "Last.fm API diffusion",
@@ -1511,34 +1618,35 @@ int _lastfmapi_latracks_score(la_track **tracks, size_t len, double lambda, time
 }
 
 LASTFMAPI_DECL
-int lastfmapi_check_opts(recomm_option opts, char **msg)
+int lastfmapi_validate_options(const source *s, const recomm_option *opts, mxrec_error *error)
 {
+	(void)s;
 	int ret = 0;
-	StrBuffer sb;
-	sb_init(&sb, 128);
-	if (!isfinite(opts.lastfmapi_opts.random_lambda) || opts.lastfmapi_opts.random_lambda <= 0) {
-		sb_append_str(&sb, "lastfmapi's random lambda must be positive.\n");
+	if (opts->level != RECOMM_SIMPLE) {
+		mxrec_error_add(error, "Last.fm API configuration", "only simple recommendation level is supported");
 		ret = -1;
 	}
-	if (!isfinite(opts.lastfmapi_opts.diff_lambda) || opts.lastfmapi_opts.diff_lambda < 0) {
-		sb_append_str(&sb, "lastfmapi's diff lambda must be finite and nonnegative.\n");
+	if (!isfinite(opts->lastfmapi_opts.random_lambda) || opts->lastfmapi_opts.random_lambda <= 0) {
+		mxrec_error_add(error, "Last.fm API configuration", "random-sample-lambda must be finite and positive");
 		ret = -1;
 	}
-	if (!isfinite(opts.lastfmapi_opts.score_beta) || opts.lastfmapi_opts.score_beta < 0) {
-		sb_append_str(&sb, "lastfmapi's score beta must be finite and nonnegative.\n");
+	if (!isfinite(opts->lastfmapi_opts.diff_lambda) || opts->lastfmapi_opts.diff_lambda < 0) {
+		mxrec_error_add(error, "Last.fm API configuration", "diffusion-lambda must be finite and nonnegative");
 		ret = -1;
 	}
-	if (!opts.lastfmapi_opts.seed_count || opts.lastfmapi_opts.seed_count > INT_MAX ||
-	    !opts.lastfmapi_opts.request_budget || !opts.lastfmapi_opts.node_budget ||
-	    opts.lastfmapi_opts.node_budget > INT_MAX || opts.lastfmapi_opts.diffusion > INT_MAX ||
-	    !opts.lastfmapi_opts.diff_size || opts.lastfmapi_opts.diff_size > UINT_MAX) {
-		sb_append_str(&sb, "lastfmapi requires seed-count in [1,INT_MAX], request-budget > 0, "
-				   "node-budget in [1,INT_MAX], diffusion <= INT_MAX and diff-size in [1,UINT_MAX].\n");
+	if (!isfinite(opts->lastfmapi_opts.score_beta) || opts->lastfmapi_opts.score_beta < 0) {
+		mxrec_error_add(error, "Last.fm API configuration", "score-beta must be finite and nonnegative");
 		ret = -1;
 	}
-	if (msg && sb.len > 0)
-		*msg = xstrndup(sb.buf, sb.len + 1);
-	sb_free(&sb);
+	if (!opts->lastfmapi_opts.seed_count || opts->lastfmapi_opts.seed_count > INT_MAX ||
+	    !opts->lastfmapi_opts.request_budget || !opts->lastfmapi_opts.node_budget ||
+	    opts->lastfmapi_opts.node_budget > INT_MAX || opts->lastfmapi_opts.diffusion > INT_MAX ||
+	    !opts->lastfmapi_opts.diff_size || opts->lastfmapi_opts.diff_size > UINT_MAX) {
+		mxrec_error_add(error, "Last.fm API configuration",
+				"requires seed-count in [1,INT_MAX], request-budget > 0, node-budget in [1,INT_MAX], "
+				"diffusion <= INT_MAX and diff-size in [1,UINT_MAX]");
+		ret = -1;
+	}
 	return ret;
 }
 
@@ -1549,6 +1657,7 @@ void lastfmapi_source_destroy(void *sp)
 	lastfmapi_source *s = (lastfmapi_source *)sp;
 	lastfm_security_free();
 	lastfmapi_query_cache_free(&s->queries);
+	lastfmapi_ranking_clear(s);
 	u8sfree(s->username);
 	xfree(s->base_url);
 	xfree(s->key);
@@ -1575,21 +1684,8 @@ int lastfmapi_recomm_multi(source *s, size_t num, playlist *p, recomm_option opt
 	la_identity_pool identities = {0};
 	time_t period;
 	mxrec_error *jerr = opts.error;
-	char *opt_msg = NULL;
-
-	if (lastfmapi_check_opts(opts, &opt_msg) < 0) {
-		mxrec_error_add(opts.error, "Last.fm API configuration", "%s", opt_msg ? opt_msg : "invalid options");
-		xfree(opt_msg);
-		return -1;
-	}
-
 	curlbuf_init(&buf, CURLBUF_DEFAULT_CAP);
 	assert(p);
-	if (opts.level == RECOMM_FULL) {
-		mxrec_error_add(opts.error, "Last.fm API recommendation", "full recommendation level is not supported");
-		ret = -1;
-		goto cleanup;
-	}
 
 	lastfmapi_source *ls = (lastfmapi_source *)s;
 	ls->request_failed = false;
@@ -1660,7 +1756,7 @@ void lastfmapi_security_handle(source *s)
 	do {                                                                                                           \
 		if (!(expr)) {                                                                                         \
 			(val) = false;                                                                                 \
-			error("lastfm-web source init failed on %s", (#expr));                                         \
+			error("lastfm-api source init failed on %s", (#expr));                                         \
 		}                                                                                                      \
 	} while (0)
 
@@ -1673,6 +1769,6 @@ bool lastfmapi_config_check(source *s)
 	check(ls->base_url != NULL, ret);
 	check(ls->key != NULL, ret);
 	check(ls->period != NULL, ret);
-	check(!(ls->strategy & LASTFMAPI_DIFFUSION_ERR), ret);
+	check(lastfmapi_strategy_valid(ls->strategy), ret);
 	return ret;
 }

@@ -9,13 +9,18 @@ typedef struct source_attempt_error {
 	struct source_attempt_error *next;
 } source_attempt_error;
 
-void source_session_init(source_session *session, source *src, recomm_option opts)
+int source_session_init(source_session *session, source *src, recomm_option opts)
 {
 	memset(session, 0, sizeof(*session));
 	session->src = src;
 	session->opts = opts;
 	/* Each call below supplies its own error object. */
 	session->opts.error = NULL;
+	if (src && src->finalize_result)
+		src->finalize_result(src, NULL);
+	int ret = source_validate_options(src, opts);
+	session->fatal = ret < 0;
+	return ret;
 }
 
 static void save_error(source_session *session, const mxrec_error *error, int status, bool partial)
@@ -81,6 +86,10 @@ int source_session_fill(source_session *session, size_t wanted)
 		if (!fetched || !session->src->refill_on_shortage)
 			break;
 	}
+	/* API attempts finish before merging; its successful short results do not
+	 * refill. The source owns any ranking state and prepares the final view. */
+	if (session->src->finalize_result)
+		session->src->finalize_result(session->src, &session->result);
 	return 0;
 }
 
@@ -98,6 +107,8 @@ void source_session_print_errors(source_session *session, FILE *out)
 
 void source_session_free(source_session *session)
 {
+	if (session->src && session->src->finalize_result)
+		session->src->finalize_result(session->src, NULL);
 	while (session->errors_head) {
 		source_attempt_error *next = session->errors_head->next;
 		xfree(session->errors_head);

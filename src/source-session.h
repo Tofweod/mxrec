@@ -17,7 +17,9 @@ typedef struct source_session {
 	struct source_attempt_error *errors_head, *errors_tail;
 } source_session;
 
-void source_session_init(source_session *session, source *src, recomm_option opts);
+/* Validates once. Configuration errors go to opts.error; failure is fatal and
+ * consumes no fetch attempts. Options remain fixed for this session. */
+int source_session_init(source_session *session, source *src, recomm_option opts);
 /* Failure retries always run to success or budget exhaustion, even if partial
  * results already fill wanted. Successful short batches refill only if enabled. */
 int source_session_fill(source_session *session, size_t wanted);

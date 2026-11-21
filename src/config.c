@@ -31,6 +31,14 @@ static const char *config_get_string_or_default(dictionary *d, const char *key, 
 	return value && value[0] ? value : def;
 }
 
+void config_resolve_weights(config_t *cfg)
+{
+	if (!cfg->lastfmapi_merge_weight_set)
+		cfg->lastfmapi_merge_weight = cfg->lastfm_merge_weight;
+	if (!cfg->lastfmweb_merge_weight_set)
+		cfg->lastfmweb_merge_weight = cfg->lastfm_merge_weight;
+}
+
 static inline bool load_config_from_file(const char *filename, config_t *cfg)
 {
 	dictionary *d;
@@ -48,10 +56,15 @@ static inline bool load_config_from_file(const char *filename, config_t *cfg)
 	cfg->sample = xstrdup(config_get_string_or_default(d, "general:sample", "head"));
 	cfg->merge = xstrdup(config_get_string_or_default(d, "general:merge", "round_robin"));
 	cfg->lastfm_merge_weight = iniparser_getdouble(d, "lastfm:merge_weight", 1.0);
-	cfg->lastfmapi_merge_weight =
-		iniparser_getdouble(d, "lastfm.api:merge-weight", cfg->lastfm_merge_weight);
-	cfg->lastfmweb_merge_weight =
-		iniparser_getdouble(d, "lastfm.web:merge-weight", cfg->lastfm_merge_weight);
+	const char *api_weight_key = iniparser_find_entry(d, "lastfm.api:merge_weight") ? "lastfm.api:merge_weight"
+											: "lastfm.api:merge-weight";
+	const char *web_weight_key = iniparser_find_entry(d, "lastfm.web:merge_weight") ? "lastfm.web:merge_weight"
+											: "lastfm.web:merge-weight";
+	cfg->lastfmapi_merge_weight_set = iniparser_find_entry(d, api_weight_key);
+	cfg->lastfmweb_merge_weight_set = iniparser_find_entry(d, web_weight_key);
+	cfg->lastfmapi_merge_weight = iniparser_getdouble(d, api_weight_key, cfg->lastfm_merge_weight);
+	cfg->lastfmweb_merge_weight = iniparser_getdouble(d, web_weight_key, cfg->lastfm_merge_weight);
+	config_resolve_weights(cfg);
 	cfg->ncm_merge_weight = iniparser_getdouble(d, "ncm:merge_weight", 1.0);
 
 	// lastfm

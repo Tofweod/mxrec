@@ -343,6 +343,20 @@ now controls depth decay and `score-beta` controls root recency decay; both are
 finite, nonnegative values, with `0` disabling that factor. Existing tuned values
 may need adjustment because the ranking semantics have changed.
 
+After Last.fm API finishes its attempts, all retained batches are ranked together
+in descending score order. Duplicate songs keep their highest-scoring occurrence;
+equal scores retain batch/item order. This also applies when every attempt fails
+but partial candidates remain. Compact ranking records are private to Last.fm
+API and are discarded after final ordering. Each attempt still releases its
+diffusion graph and identity pool; `playitem` and `playlist_viewer` carry no
+recommendation scores. Scores are local to this source and are not compared
+against NCM or Last.fm Web. `[general] sample=head` consumes this ranking;
+`sample=random` still samples candidates uniformly, and `merge=reservoir` performs
+its own random selection regardless of the sampling setting.
+
+`strategy` accepts only `dfs` or `bfs`, and `sample` accepts only `topn` or `random`
+in `[lastfm.api]`. Missing, invalid or swapped values fail source initialization.
+
 ### Merge weights
 
 When `merge=weighted`, each source has a weight:
@@ -368,10 +382,19 @@ Weight resolution:
 3. If a source-specific Last.fm weight is omitted, the global `[lastfm] merge_weight` is used.
 4. NCM uses `[ncm] merge_weight`.
 
+Sources store their effective `merge_weight`; weighted merging reads it directly
+without matching source names. Source-specific Last.fm overrides remain explicit
+after CLI processing. For omitted overrides, inheritance is recomputed after CLI
+processing, so `--lastfm-merge-weight` also updates those inherited values.
+`--lastfmapi-merge-weight` and `--lastfmweb-merge-weight` explicitly override their
+respective values, including zero. The legacy `merge-weight` spelling is also
+accepted in `[lastfm.api]` and `[lastfm.web]`; `merge_weight` takes precedence if
+both spellings are present.
+
 Weights must be finite and nonnegative, with at least one positive weight when
 sources are configured. A zero weight excludes that source from weighted merging.
 Weights determine preferred shares; unused quotas are redistributed to sources
-that still have candidates.
+that still have candidates. Invalid weighted-merge settings fail before fetching.
 
 ### Song deduplication
 
@@ -386,6 +409,15 @@ Another source filling the final playlist never cancels these failure retries.
 Web and NCM; zero disables it. A request timeout is a failed attempt and uses the
 same retry budget. Last.fm API ignores this setting and applies no overall curl
 request timeout, so diffusion is not bounded by this configuration value.
+Each source stores the effective timeout: Web/NCM inherit the general value,
+and Last.fm API sets it to zero. The effective value must fit in curl's `long`
+timeout argument.
+
+Recommendation options are validated once per source session, before any source
+workers start. Invalid Last.fm API options fail without consuming `max-try` or
+issuing requests; configuration diagnostics carry no attempt number. Standalone
+`recomm_multi`/`recomm_single` calls validate once per call. Failure retries and
+shortage refills reuse the session's already validated, fixed options.
 
 Batches are deduplicated within each source and the merge continues past
 duplicates. If the merged result is short, refill-capable sources can contribute
